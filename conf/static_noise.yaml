@@ -13,7 +13,7 @@ augmentation:
   pipeline: [
             {
               "GaussianNoise": {
-              _target_: autrainer.augmentations.spectrogram_augmentations.GaussianNoise,
+              _target_: autrainer.augmentations.spectrogram_augmentations.StaticGaussianNoise,
               mean: 0.0,
               std: 0.1,
               p: 1.0},
