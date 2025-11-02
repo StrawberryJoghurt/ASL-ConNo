@@ -271,6 +271,7 @@ class AbstractDataset(ABC):
         pin_memory_device: str = "",
     ) -> DataLoader:
         self.train_transform.setup(self)
+        self.target_transform
         return DataLoader(
             self.train_dataset,
             batch_size=batch_size,

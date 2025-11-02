@@ -46,9 +46,51 @@ class GaussianNoise(AbstractAugmentation):
 
     def apply(self, item: AbstractDataItem) -> AbstractDataItem:
         r = torch.randn(item.features.size(), generator=self._generator)
+        # if item.index==81757:
+        #     print(r)
         item.features = item.features + r * self.std + self.mean
         return item
 
+
+class StaticGaussianNoise(AbstractAugmentation):
+    def __init__(
+        self,
+        mean: float = 0.0,
+        std: float = 1.0,
+        order: int = 0,
+        p: float = 1.0,
+        generator_seed: Optional[int] = None,
+    ) -> None:
+        """Add Gaussian noise to the input tensor with mean and standard
+        deviation.
+
+        Args:
+            mean: The mean of the Gaussian noise. Defaults to 0.0.
+            std: The standard deviation of the Gaussian noise. Defaults to 1.0.
+            order: The order of the augmentation in the transformation pipeline.
+                Defaults to 0.
+            p: The probability of applying the augmentation. Defaults to 1.0.
+            generator_seed: The initial seed for the internal random number
+                generator drawing the probability. If None, the generator is
+                not seeded. Defaults to None.
+        """
+        super().__init__(order, p, generator_seed)
+        self.mean = mean
+        self.std = std
+        self.seed = generator_seed
+    def offset_generator_seed(self, offset: int) -> None:
+        super().offset_generator_seed(offset)
+        if self.generator_seed is not None:
+            self._generator.manual_seed(self.generator_seed)
+
+    def apply(self, item: AbstractDataItem) -> AbstractDataItem:
+        generator = torch.Generator()
+        generator.manual_seed(self.generator_seed+item.index)
+        r = torch.randn(item.features.size(), generator=generator)
+        # if item.index==81757:
+        #     print(r)
+        item.features = item.features + r * self.std + self.mean
+        return item
 
 class TimeShift(AbstractAugmentation):
     def __init__(

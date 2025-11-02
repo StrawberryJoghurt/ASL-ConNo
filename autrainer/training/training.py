@@ -91,7 +91,7 @@ class ModularTaskTrainer:
 
         augmentation_manager = AugmentationManager(self.cfg.augmentation)
         train_aug, dev_aug, test_aug = augmentation_manager.get_augmentations()
-
+        # print(f"train_aug, dev_aug, test_aug: {train_aug}, {dev_aug}, { test_aug} ")
         transform_manager = TransformManager(
             model_transform=model_config.pop("transform", None),
             dataset_transform=dataset_config.pop("transform", None),
@@ -111,7 +111,7 @@ class ModularTaskTrainer:
             dev_transform=dev_transform,
             test_transform=test_transform,
             seed=dataset_seed,
-        )
+        ) # 用来调用 datasets.speech_commands（或类似类）的init了
 
         # ? Create Bookkeeping
         self.bookkeeping = Bookkeeping(
@@ -380,6 +380,7 @@ class ModularTaskTrainer:
         self._thread_manager.join()
         self.callback_manager.callback(position="cb_on_train_begin", trainer=self)
 
+        print(f"self.cfg.training_type : {self.cfg.training_type}")
         if self.cfg.training_type == "epoch":
             self.train_epochs()
         elif self.cfg.training_type == "step":
