@@ -2,6 +2,7 @@
 # autrainer default data and results directories
 data/
 results/
+autrainer-configurations/data/
 
 # VS Code
 .vscode/
