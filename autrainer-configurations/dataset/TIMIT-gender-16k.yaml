@@ -1,5 +1,5 @@
 id: TIMIT-gender-16k
-_target_: autrainer.datasets.BaseClassificationDataset
+_target_: autrainer.datasets.TIMIT
 
 path: autrainer-configurations/data/TIMIT-gender
 features_subdir: log_mel_16k
@@ -7,6 +7,7 @@ index_column: path
 target_column: gender
 file_type: npy
 file_handler: autrainer.datasets.utils.NumpyFileHandler
+task_type: gender
 
 criterion: autrainer.criterions.BalancedCrossEntropyLoss
 metrics:
