@@ -1,0 +1,11 @@
+id: LabelNoise
+_target_: autrainer.augmentations.AugmentationPipeline
+
+generator_seed: 0
+
+pipeline:
+  - autrainer.augmentations.LabelNoise:
+      noise_rate: 0.1
+      num_classes: 35        # adjust based on dataset
+      seed: ${generator_seed}
+      mode: "fixed"          # or "probabilistic"
