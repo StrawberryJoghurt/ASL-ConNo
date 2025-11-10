@@ -1,0 +1,50 @@
+defaults:
+  - _autrainer_
+  - _self_
+
+device: "cuda:6"        # or 'cuda'
+
+results_dir: results
+# experiment_id: Gaussian_noise
+experiment_id: noise
+iterations: 10
+
+train_augmentation:
+  _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
+  id: GaussianNoise(H)
+  pipeline: [
+            {
+              "GaussianNoise": {
+              _target_: autrainer.augmentations.spectrogram_augmentations.GaussianNoise,
+              mean: 0.0,
+              std: 0.1,
+              p: 1.0},
+              }
+            ]
+
+
+test_augmentation:
+  _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
+  id: GaussianNoise(L)
+  pipeline: [
+            {
+              "GaussianNoise": {
+              _target_: autrainer.augmentations.spectrogram_augmentations.StaticGaussianNoise,
+              mean: 0.0,
+              std: 0.0294,
+              generator_seed: 0,
+              p: 1.0},
+              }
+            ]
+
+
+
+hydra:
+  sweeper:
+    params:
+      +seed: 0
+      +batch_size: 64
+      +learning_rate: 0.001
+      dataset: TIMIT-dialect-16k, TIMIT-gender-16k, TIMIT-sentencetype-16k
+      model: Cnn10-32k-T
+      optimizer: Adam

@@ -51,7 +51,6 @@ class GaussianNoise(AbstractAugmentation):
         item.features = item.features + r * self.std + self.mean
         return item
 
-
 class StaticGaussianNoise(AbstractAugmentation):
     def __init__(
         self,

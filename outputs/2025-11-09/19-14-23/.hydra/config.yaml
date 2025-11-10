@@ -1,0 +1,8 @@
+train_augmentation:
+  _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
+  id: GaussianNoise_H
+  pipeline:
+  - _target_: autrainer.augmentations.spectrogram_augmentations.GaussianNoise
+    mean: 0.0
+    std: 0.5224
+    p: 1.0

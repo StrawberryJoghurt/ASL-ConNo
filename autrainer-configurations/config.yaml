@@ -4,7 +4,8 @@ defaults:
 
 results_dir: results
 experiment_id: default
-iterations: 5
+iterations: 15
+device: mps
 
 hydra:
   sweeper:
@@ -12,6 +13,7 @@ hydra:
       +seed: 1
       +batch_size: 32
       +learning_rate: 0.001
-      dataset: ToyTabular-C
-      model: ToyFFNN
+      +preprocessing: log_mel_16k
+      dataset: TIMIT-sentencetype-16k
+      model: Cnn10
       optimizer: Adam

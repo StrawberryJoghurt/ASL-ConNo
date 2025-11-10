@@ -89,7 +89,10 @@ class ModularTaskTrainer:
                 self.cfg.get(key, {}),
             )
 
-        augmentation_manager = AugmentationManager(self.cfg.augmentation)
+        augmentation_manager = AugmentationManager(train_augmentation=self.cfg.train_augmentation,
+                                                   dev_augmentation=self.cfg.train_augmentation,
+                                                   test_augmentation=self.cfg.test_augmentation)
+        
         train_aug, dev_aug, test_aug = augmentation_manager.get_augmentations()
         # print(f"train_aug, dev_aug, test_aug: {train_aug}, {dev_aug}, { test_aug} ")
         transform_manager = TransformManager(
@@ -112,6 +115,8 @@ class ModularTaskTrainer:
             test_transform=test_transform,
             seed=dataset_seed,
         ) # 用来调用 datasets.speech_commands（或类似类）的init了
+
+        # TODO: filp here
 
         # ? Create Bookkeeping
         self.bookkeeping = Bookkeeping(

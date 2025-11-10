@@ -12,7 +12,6 @@ class AugmentationManager:
     def __init__(
         self,
         train_augmentation: Optional[Union[DictConfig, Dict]] = None,
-        target_augmentation: Optional[Union[DictConfig, Dict]] = None,
         dev_augmentation: Optional[Union[DictConfig, Dict]] = None,
         test_augmentation: Optional[Union[DictConfig, Dict]] = None,
     ) -> None:

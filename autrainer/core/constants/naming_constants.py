@@ -16,13 +16,17 @@ class NamingConstants(AbstractConstants):
         "training_type",
         "iterations",
         "scheduler",
-        "augmentation",
+        # "augmentation",
+        "train_augmentation",
+        "test_augmentation",
         "seed",
     ]
     _invalid_aggregations = ["training_type"]
     _valid_aggregations = list(set(_naming_convention) - set(_invalid_aggregations))
     _config_dirs = [
-        "augmentation",
+        # "augmentation",
+        "train_augmentation",
+        "test_augmentation",
         "dataset",
         "model",
         "optimizer",

@@ -21,3 +21,4 @@ docs/build/
 # pytest
 .coverage
 .coverage.*
+*.zip
