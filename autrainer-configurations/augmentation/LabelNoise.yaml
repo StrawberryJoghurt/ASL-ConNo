@@ -7,4 +7,4 @@ pipeline:
   - autrainer.augmentations.LabelNoise:
       noise_rate: 0.1
       labels: ["New_England", "Northern", "North_Midland", "South_Midland", "Southern", "New_York_City", "Western", "Army_Brat"]
-      mode: "fixed"          # or "probabilistic"
+      mode: "fixed" # or "probabilistic"

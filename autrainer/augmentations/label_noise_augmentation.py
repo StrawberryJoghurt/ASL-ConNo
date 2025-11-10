@@ -1,4 +1,3 @@
-import torch
 import numpy as np
 import logging
 from typing import Optional, Sequence
@@ -8,15 +7,12 @@ from .abstract_augmentation import AbstractAugmentation
 logger = logging.getLogger(__name__)
 
 class LabelNoise(AbstractAugmentation):
-    """
-    LabelNoise augmentation for string targets (TIMIT dialect style).
-    Adds noise directly on label strings before encoding.
-    """
+
 
     def __init__(
         self,
         noise_rate: float = 0.1,
-        labels: Optional[Sequence[str]] = None,  # all possible label names
+        labels: Optional[Sequence[str]] = None,
         generator_seed: int = 0,
         mode: str = "fixed",
         **kwargs,
@@ -29,11 +25,10 @@ class LabelNoise(AbstractAugmentation):
         self.rng = np.random.default_rng(self.generator_seed)
 
     def apply(self, batch):
-        """Replace some label strings randomly with others."""
         y = batch.target
 
         # single sample
-        if isinstance(y, str):
+        if isinstance(y, (str, int)):
             if self.labels and self.rng.random() < self.noise_rate:
                 new_label = self.rng.choice(self.labels)
                 while new_label == y:
@@ -43,7 +38,7 @@ class LabelNoise(AbstractAugmentation):
             return batch
 
         # batch mode
-        if isinstance(y, (list, tuple)):
+        if isinstance(y, (list, tuple, np.ndarray)):
             n = len(y)
             y = np.array(y)
             noisy_y = y.copy()
