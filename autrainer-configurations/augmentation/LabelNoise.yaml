@@ -6,6 +6,5 @@ generator_seed: 0
 pipeline:
   - autrainer.augmentations.LabelNoise:
       noise_rate: 0.1
-      num_classes: 35        # adjust based on dataset
-      seed: ${generator_seed}
+      labels: ["New_England", "Northern", "North_Midland", "South_Midland", "Southern", "New_York_City", "Western", "Army_Brat"]
       mode: "fixed"          # or "probabilistic"
