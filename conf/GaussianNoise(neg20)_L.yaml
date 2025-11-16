@@ -1,18 +1,18 @@
 defaults:
 - _autrainer_
 - _self_
-device: cuda:7
+device: cuda:6
 results_dir: results
 experiment_id: noise
 iterations: 5
 test_augmentation:
   _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
-  id: GaussianNoise(H)
+  id: GaussianNoise(L)
   pipeline:
   - GaussianNoise:
       _target_: autrainer.augmentations.spectrogram_augmentations.StaticGaussianNoise
       mean: 0.0
-      std: 0.5224
+      std: 0.0294
       generator_seed: 0
       p: 1.0
 hydra:
@@ -26,11 +26,11 @@ hydra:
       optimizer: Adam
 train_augmentation:
   _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
-  id: GaussianNoise(H)
+  id: GaussianNoise(neg20)
   pipeline:
   - GaussianNoise:
       _target_: autrainer.augmentations.spectrogram_augmentations.GaussianNoise
       mean: 0.0
-      std: 0.5224
+      std: 5.2243
       p: 1.0
       generator_seed: 0

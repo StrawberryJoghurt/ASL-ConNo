@@ -26,11 +26,11 @@ hydra:
       optimizer: Adam
 train_augmentation:
   _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
-  id: GaussianNoise(H)
+  id: GaussianNoise(neg20)
   pipeline:
   - GaussianNoise:
       _target_: autrainer.augmentations.spectrogram_augmentations.GaussianNoise
       mean: 0.0
-      std: 0.5224
+      std: 5.2243
       p: 1.0
       generator_seed: 0

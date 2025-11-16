@@ -21,7 +21,7 @@ hydra:
       +seed: 0
       +batch_size: 64
       +learning_rate: 0.001
-      dataset: TIMIT-dialect-16k
+      dataset: TIMIT-sentencetype-16k
       model: Cnn10-32k-T
       optimizer: Adam
 train_augmentation:

@@ -6,33 +6,34 @@ device: "cuda:7"        # or 'cuda'
 
 results_dir: results
 # experiment_id: Gaussian_noise
-experiment_id: noise
+experiment_id: test
 iterations: 5
 
-# train_augmentation:
-#   _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
-#   id: GaussianNoise
-#   pipeline: [
-#             {
-#               "GaussianNoise": {
-#               _target_: autrainer.augmentations.spectrogram_augmentations.GaussianNoise,
-#               mean: 0.0,
-#               std: 0.1,
-#               p: 1.0},
-#               }
-#             ]
+train_augmentation:
+  _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
+  id: GaussianNoise
+  pipeline: [
+            {
+              "GaussianNoise": {
+              _target_: autrainer.augmentations.spectrogram_augmentations.SNR_noise,
+              snr: 0,
+              noise_type: Gaussian,
+              p: 1.0
+              },
+              }
+            ]
 
 
 test_augmentation:
   _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
-  id: GaussianNoise(M)
+  id: GaussianNoise(H)
   pipeline: [
             {
               "GaussianNoise": {
-              _target_: autrainer.augmentations.spectrogram_augmentations.StaticGaussianNoise,
-              mean: 0.0,
-              std: 0.0929,
+              _target_: autrainer.augmentations.spectrogram_augmentations.SNR_noise,
+              snr: 0,
               generator_seed: 0,
+              noise_type: StaticGaussian,
               p: 1.0},
               }
             ]

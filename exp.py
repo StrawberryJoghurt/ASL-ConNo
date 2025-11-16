@@ -4,16 +4,17 @@ import autrainer.cli
 import yaml
 # === 参数定义 ===
 experiments = [
+    ("GaussianNoise(neg20)", 5.2243),
     ("GaussianNoise(H)", 0.5224),
-    ("GaussianNoise(M)", 0.0929),
     ("GaussianNoise(L)", 0.0294),
 ]
 
 base_dir = "conf"
 os.makedirs(base_dir, exist_ok=True)
 
-for post in ['H', 'L', 'M']:
+for post in ['neg_20', 'H', 'L']:
     for aug_id, std in experiments:
+        
         exp_name = f"{aug_id}_{post}"
         cfg_path = os.path.join(base_dir, f"{exp_name}.yaml")
         with open(f'conf/baseline_{post}.yaml') as f:

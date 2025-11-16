@@ -8,6 +8,54 @@ from autrainer.core.structs import AbstractDataItem
 
 from .abstract_augmentation import AbstractAugmentation
 from .spectrogram_warp_utils import _sparse_image_warp
+import numpy as np 
+
+def get_gaussian_sigma(p_signal, snr_db):
+    p_noise = p_signal / (10 ** (snr_db/10))
+    return np.sqrt(p_noise)
+
+class SNR_noise(AbstractAugmentation):
+    available_noise_type = ['Gaussian', 'StaticGaussian']
+    def __init__(
+        self,
+        snr: float=0.0,
+        order: int = 0,
+        p: float = 1.0,
+        generator_seed: Optional[int] = None,
+        noise_type: str='Gaussian',
+    ) -> None:
+        if noise_type not in self.available_noise_type:
+            raise ValueError("This noise is not available.")
+        
+        super().__init__(order, p, generator_seed)
+        self.snr = snr
+        self.noise_type = noise_type
+        self._generator = torch.Generator()
+        if generator_seed is not None:
+            self._generator.manual_seed(generator_seed)
+
+    def offset_generator_seed(self, offset: int) -> None:
+        super().offset_generator_seed(offset)
+        if self.generator_seed is not None:
+            self._generator.manual_seed(self.generator_seed)
+
+    def apply(self, item: AbstractDataItem) -> AbstractDataItem:
+        # calculate the 
+
+        p_item = (10 ** (item.features[(item.features<0).all(dim=-1)] / 10)).sum(axis=-1).mean() # ignore padding
+        if self.noise_type == "Gaussian":
+            std = get_gaussian_sigma(p_item, self.snr)
+            r = torch.randn(item.features.size(), generator=self._generator)
+            item.features = item.features + r * std 
+        elif self.noise_type == "StaticGaussian":
+            generator = torch.Generator()
+            std = get_gaussian_sigma(p_item, self.snr)
+            generator.manual_seed(self.generator_seed+item.index)
+            r = torch.randn(item.features.size(), generator=generator)
+            item.features = item.features + r * std
+        else:
+            pass 
+        return item
 
 
 class GaussianNoise(AbstractAugmentation):
