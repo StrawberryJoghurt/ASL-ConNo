@@ -41,8 +41,8 @@ class SNR_noise(AbstractAugmentation):
 
     def apply(self, item: AbstractDataItem) -> AbstractDataItem:
         # calculate the 
-
-        p_item = (10 ** (item.features[(item.features<0).all(dim=-1)] / 10)).sum(axis=-1).mean() # ignore padding
+        mask = item.features.abs().sum(dim=-1) > 0
+        p_item = (10 ** (item.features[mask] / 10)).sum(axis=-1).mean() # ignore padding
         if self.noise_type == "Gaussian":
             std = get_gaussian_sigma(p_item, self.snr)
             r = torch.randn(item.features.size(), generator=self._generator)
