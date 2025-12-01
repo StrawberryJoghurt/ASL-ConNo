@@ -1,7 +1,7 @@
 id: SpeechCommands-16k
 _target_: autrainer.datasets.SpeechCommands
 
-path: data/SpeechCommands
+path: autrainer-configurations/data/SpeechCommands
 features_subdir: log_mel_16k
 index_column: path
 target_column: label

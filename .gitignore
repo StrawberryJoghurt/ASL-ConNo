@@ -22,3 +22,7 @@ docs/build/
 .coverage
 .coverage.*
 *.zip
+CLAUDE.md
+*.csv
+*.png
+.python-version

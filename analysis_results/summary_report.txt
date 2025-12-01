@@ -1,0 +1,54 @@
+================================================================================
+CROSS-DOMAIN NOISE EXPERIMENTS - SUMMARY REPORT
+Generated: 2025-12-01 09:34:26
+================================================================================
+
+Baseline (Clean train/test): 75.24%
+
+----------------------------------------
+Same-Domain Gaussian
+----------------------------------------
+  Diagonal mean (matched SNR): 75.06%
+  Off-diagonal mean (mismatched SNR): 64.60%
+  Best: Train -20dB, Test -20dB = 76.24%
+  Worst: Train 20dB, Test -20dB = 38.45%
+
+----------------------------------------
+Same-Domain AudioSet
+----------------------------------------
+  Diagonal mean (matched SNR): 74.64%
+  Off-diagonal mean (mismatched SNR): 74.44%
+  Best: Train 0dB, Test 0dB = 75.30%
+  Worst: Train -20dB, Test 0dB = 73.77%
+
+----------------------------------------
+Cross-Domain Gaussian→AudioSet
+----------------------------------------
+  Diagonal mean (matched SNR): 74.63%
+  Off-diagonal mean (mismatched SNR): 74.64%
+  Best: Train 20dB, Test 0dB = 75.42%
+  Worst: Train -20dB, Test -20dB = 73.86%
+
+----------------------------------------
+Cross-Domain AudioSet→Gaussian
+----------------------------------------
+  Diagonal mean (matched SNR): 62.62%
+  Off-diagonal mean (mismatched SNR): 61.96%
+  Best: Train 0dB, Test 0dB = 75.03%
+  Worst: Train 0dB, Test -20dB = 36.91%
+
+----------------------------------------
+Robustness (Gaussian→Clean)
+----------------------------------------
+  SNR -20dB → Clean: 74.08%
+  SNR 0dB → Clean: 74.10%
+  SNR 20dB → Clean: 75.37%
+
+----------------------------------------
+Robustness (AudioSet→Clean)
+----------------------------------------
+  SNR -20dB → Clean: 73.75%
+  SNR 0dB → Clean: 74.84%
+  SNR 20dB → Clean: 74.31%
+
+================================================================================

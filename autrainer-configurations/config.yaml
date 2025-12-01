@@ -5,7 +5,9 @@ defaults:
 results_dir: results
 experiment_id: default
 iterations: 15
-device: mps
+device: cuda
+eval_frequency: 5
+save_frequency: 5
 
 hydra:
   sweeper:

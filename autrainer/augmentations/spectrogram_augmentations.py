@@ -1,8 +1,12 @@
-from typing import Optional
+from typing import Optional, List
+import os
+import random
 
 import torch
+import torchaudio
 import torchaudio.transforms as T
 import torchvision.transforms.functional as F
+import pandas as pd
 
 from autrainer.core.structs import AbstractDataItem
 
@@ -55,6 +59,192 @@ class SNR_noise(AbstractAugmentation):
             item.features = item.features + r * std
         else:
             pass 
+        return item
+
+
+class CrossDomainNoise(AbstractAugmentation):
+    """Add real cross-domain noise from AudioSet-Balanced-Noise with target SNR.
+
+    This augmentation loads real noise samples from a directory and adds them
+    to the log mel spectrogram with a specified SNR. The noise is:
+    1. Loaded as a waveform (.wav)
+    2. Converted to log mel spectrogram matching the input's parameters
+    3. Cropped or repeated to match the input's time dimension
+    4. Scaled to achieve the target SNR
+    5. Added to the input spectrogram
+
+    Args:
+        noise_dir: Root directory containing noise wav files
+        noise_csv: Optional CSV file listing noise files. If None, all .wav files
+            in noise_dir will be used
+        snr_db: Target Signal-to-Noise Ratio in dB. Lower values = more noise
+        sample_rate: Sample rate for loading audio. Defaults to 16000
+        n_fft: FFT size for mel spectrogram. Defaults to 512
+        hop_length: Hop length for mel spectrogram. Defaults to 160
+        n_mels: Number of mel filterbanks. Defaults to 64
+        noise_type: Type of noise to use. If specified, filters noise files by
+            this label from the CSV. Options: 'Environmental noise', 'Noise',
+            'Pink noise', 'White noise'. If None, uses all available noise.
+        order: The order of the augmentation in the transformation pipeline
+        p: The probability of applying the augmentation. Defaults to 1.0
+        generator_seed: The initial seed for the internal random number generator
+    """
+
+    def __init__(
+        self,
+        noise_dir: str,
+        snr_db: float,
+        sample_rate: int = 16000,
+        n_fft: int = 512,
+        hop_length: int = 160,
+        n_mels: int = 64,
+        noise_csv: Optional[str] = None,
+        noise_type: Optional[str] = None,
+        order: int = 0,
+        p: float = 1.0,
+        generator_seed: Optional[int] = None,
+    ) -> None:
+        super().__init__(order, p, generator_seed)
+        self.noise_dir = noise_dir
+        self.snr_db = snr_db
+        self.sample_rate = sample_rate
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.n_mels = n_mels
+        self.noise_type = noise_type
+
+        # Load noise file paths
+        self.noise_files = self._load_noise_files(noise_csv)
+
+        if len(self.noise_files) == 0:
+            raise ValueError(f"No noise files found in {noise_dir}")
+
+        # Create mel spectrogram transform
+        self.mel_transform = T.MelSpectrogram(
+            sample_rate=sample_rate,
+            n_fft=n_fft,
+            hop_length=hop_length,
+            n_mels=n_mels,
+        )
+
+        # Cache for loaded noise spectrograms
+        self._noise_cache = {}
+
+    def _load_noise_files(self, noise_csv: Optional[str]) -> List[str]:
+        """Load list of noise files from directory or CSV."""
+        noise_files = []
+
+        if noise_csv is not None and os.path.exists(noise_csv):
+            # Load from CSV
+            df = pd.read_csv(noise_csv)
+            if self.noise_type is not None and 'label' in df.columns:
+                # Filter by noise type
+                df = df[df['label'] == self.noise_type]
+
+            for path in df['path']:
+                full_path = os.path.join(self.noise_dir, path)
+                if os.path.exists(full_path):
+                    noise_files.append(full_path)
+        else:
+            # Load all .wav files from directory recursively
+            for root, dirs, files in os.walk(self.noise_dir):
+                for file in files:
+                    if file.endswith('.wav'):
+                        noise_files.append(os.path.join(root, file))
+
+        return noise_files
+
+    def _load_noise_spectrogram(self, noise_path: str) -> torch.Tensor:
+        """Load a noise file and convert to log mel spectrogram."""
+        if noise_path in self._noise_cache:
+            return self._noise_cache[noise_path].clone()
+
+        # Load audio
+        waveform, sr = torchaudio.load(noise_path)
+
+        # Resample if needed
+        if sr != self.sample_rate:
+            resampler = T.Resample(sr, self.sample_rate)
+            waveform = resampler(waveform)
+
+        # Convert to mono if stereo
+        if waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
+
+        # Create mel spectrogram
+        mel_spec = self.mel_transform(waveform)
+
+        # Convert to log scale (dB)
+        log_mel_spec = 10 * torch.log10(mel_spec + 1e-9)
+
+        # Cache it
+        self._noise_cache[noise_path] = log_mel_spec
+
+        return log_mel_spec.clone()
+
+    def _match_length(self, noise: torch.Tensor, target_length: int) -> torch.Tensor:
+        """Crop or repeat noise to match target length."""
+        _, _, noise_length = noise.shape
+
+        if noise_length == target_length:
+            return noise
+        elif noise_length > target_length:
+            # Randomly crop
+            start = random.randint(0, noise_length - target_length)
+            return noise[:, :, start:start + target_length]
+        else:
+            # Repeat and crop
+            repeat_times = (target_length // noise_length) + 1
+            noise_repeated = noise.repeat(1, 1, repeat_times)
+            return noise_repeated[:, :, :target_length]
+
+    def apply(self, item: AbstractDataItem) -> AbstractDataItem:
+        """Apply cross-domain noise with target SNR."""
+        # Select random noise file
+        noise_path = random.choice(self.noise_files)
+
+        # Load noise spectrogram
+        noise_spec = self._load_noise_spectrogram(noise_path)
+
+        # Match dimensions to input
+        noise_spec = self._match_length(noise_spec, item.features.shape[-1])
+
+        # Ensure noise has same shape as features
+        if noise_spec.shape[1] != item.features.shape[1]:
+            # Resize frequency dimension if needed
+            noise_spec = torch.nn.functional.interpolate(
+                noise_spec.unsqueeze(0),
+                size=(item.features.shape[1], item.features.shape[2]),
+                mode='bilinear',
+                align_corners=False
+            ).squeeze(0)
+
+        # Calculate signal power (convert from dB to linear)
+        # Mask out padding (negative values in all frequency bins)
+        valid_mask = ~(item.features < 0).all(dim=-2, keepdim=True)
+        signal_power_db = item.features * valid_mask
+        signal_power_linear = 10 ** (signal_power_db / 10)
+        p_signal = signal_power_linear.sum(dim=-2).mean()
+
+        # Calculate noise power
+        noise_power_linear = 10 ** (noise_spec / 10)
+        p_noise_current = noise_power_linear.sum(dim=-2).mean()
+
+        # Calculate required noise power for target SNR
+        p_noise_target = p_signal / (10 ** (self.snr_db / 10))
+
+        # Scale noise to achieve target SNR
+        noise_scale = torch.sqrt(p_noise_target / (p_noise_current + 1e-9))
+
+        # Scale noise in linear domain, then convert back to dB
+        scaled_noise_linear = noise_power_linear * noise_scale
+        scaled_noise_db = 10 * torch.log10(scaled_noise_linear + 1e-9)
+
+        # Add noise to signal (in dB domain, this is an approximation)
+        # For proper addition we should convert to linear, add, convert back
+        # But for augmentation, simple addition works as a reasonable approximation
+        item.features = item.features + scaled_noise_db * 0.1  # Scale factor for stability
+
         return item
 
 

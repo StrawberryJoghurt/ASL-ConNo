@@ -1,0 +1,36 @@
+defaults:
+- _autrainer_
+- _self_
+device: cuda
+results_dir: results
+experiment_id: GG_train20_test20
+iterations: 15
+hydra:
+  sweeper:
+    params:
+      +seed: 0
+      +batch_size: 64
+      +learning_rate: 0.001
+      dataset: TIMIT-sentencetype-16k
+      model: Cnn10-32k-T
+      optimizer: Adam
+train_augmentation:
+  _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
+  id: GaussianNoise(20dB)
+  pipeline:
+  - SNR_noise:
+      _target_: autrainer.augmentations.spectrogram_augmentations.SNR_noise
+      snr: 20.0
+      noise_type: Gaussian
+      p: 1.0
+      generator_seed: 0
+test_augmentation:
+  _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
+  id: GaussianNoise(20dB)
+  pipeline:
+  - SNR_noise:
+      _target_: autrainer.augmentations.spectrogram_augmentations.SNR_noise
+      snr: 20.0
+      noise_type: StaticGaussian
+      p: 1.0
+      generator_seed: 0

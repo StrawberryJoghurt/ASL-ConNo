@@ -1,0 +1,42 @@
+defaults:
+- _autrainer_
+- _self_
+device: cuda
+results_dir: results
+experiment_id: AG_train-20_test-20
+iterations: 15
+hydra:
+  sweeper:
+    params:
+      +seed: 0
+      +batch_size: 64
+      +learning_rate: 0.001
+      dataset: TIMIT-sentencetype-16k
+      model: Cnn10-32k-T
+      optimizer: Adam
+train_augmentation:
+  _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
+  id: AudioSetNoise(-20dB)
+  pipeline:
+  - CrossDomainNoise:
+      _target_: autrainer.augmentations.spectrogram_augmentations.CrossDomainNoise
+      noise_dir: autrainer-configurations/data/AudioSet-Balanced-Noise
+      noise_csv: autrainer-configurations/data/AudioSet-Balanced-Noise/train.csv
+      snr_db: -20.0
+      sample_rate: 16000
+      n_fft: 512
+      hop_length: 160
+      n_mels: 64
+      noise_type: null
+      p: 1.0
+      generator_seed: 0
+test_augmentation:
+  _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
+  id: GaussianNoise(-20dB)
+  pipeline:
+  - SNR_noise:
+      _target_: autrainer.augmentations.spectrogram_augmentations.SNR_noise
+      snr: -20.0
+      noise_type: StaticGaussian
+      p: 1.0
+      generator_seed: 0
