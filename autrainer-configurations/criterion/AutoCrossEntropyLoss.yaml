@@ -1,0 +1,5 @@
+_target_: autrainer.criterions.AutoCrossEntropyLoss
+# label distortion mode: "mislabel "or "smoothing" / "random"
+mode: "mislabel"
+# how strong to distort labels
+noise_level: 0.1

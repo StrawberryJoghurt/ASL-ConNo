@@ -198,3 +198,115 @@ class WeightedBCEWithLogitsLoss(BalancedBCEWithLogitsLoss):
         weight = torch.tensor(values, dtype=torch.float32)
         weight = weight * len(weight) / weight.sum()
         self.register_buffer("weights_buffer", weight)
+
+
+
+class AutoCrossEntropyLoss(torch.nn.Module):
+    """
+    Unified loss that applies label distortion (mislabel, smoothing, random_noise)
+    automatically inside the loss function.
+    """
+
+    def __init__(self, mode="mislabel", noise_level=0.1):
+        super().__init__()
+        self.mode = mode
+        self.noise_level = noise_level
+        self.ce = torch.nn.CrossEntropyLoss(reduction="none")
+
+    def _one_hot(self, y, num_classes):
+        y_onehot = torch.zeros((y.size(0), num_classes), device=y.device)
+        y_onehot.scatter_(1, y.unsqueeze(1), 1.0)
+        return y_onehot
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+
+        if y.ndim == 1:
+            y = y.long()
+
+        num_classes = x.size(1)
+        y_onehot = self._one_hot(y, num_classes)
+
+        # 0) No noise
+        if self.noise_level <= 0 or self.mode == "none":
+            log_prob = torch.log(x + 1e-8)
+            return -(y_onehot * log_prob).sum(dim=1)
+
+        # 1) Smoothing
+        if self.mode == "smoothing":
+            smooth = self.noise_level / (num_classes - 1)
+            y_smooth = torch.full_like(y_onehot, smooth)
+            y_smooth.scatter_(1, y.unsqueeze(1), 1.0 - self.noise_level)
+            return -(y_smooth * torch.log(x + 1e-8)).sum(dim=1)
+
+        # 2) Mislabel
+        elif self.mode == "mislabel":
+            B = y.size(0)
+            mask = (torch.rand(B, device=y.device) < self.noise_level)
+            y_noisy = y.clone()
+
+            for i in range(B):
+                if mask[i]:
+                    all_cls = torch.arange(num_classes, device=y.device)
+                    wrong = all_cls[all_cls != y[i]]
+                    y_noisy[i] = wrong[torch.randint(len(wrong), (1,))]
+            return self.ce(x, y_noisy)
+
+        # 3) Random noise
+        elif self.mode == "random":
+            noise = torch.rand_like(y_onehot)
+            noise = noise / noise.sum(dim=1, keepdim=True)
+            y_noisy = (1 - self.noise_level) * y_onehot + self.noise_level * noise
+            return -(y_noisy * torch.log(x + 1e-8)).sum(dim=1)
+
+        else:
+            raise ValueError(f"Unknown mode: {self.mode}")
+
+    def forward_with_debug(self, x: torch.Tensor, y: torch.Tensor):
+        """
+        Returns:
+            loss (scalar)
+            noisy_label (tensor)
+        """
+        if y.ndim == 1:
+            y = y.long()
+
+        num_classes = x.size(1)
+        y_onehot = self._one_hot(y, num_classes)
+
+        # 0) no noise
+        if self.noise_level <= 0 or self.mode == "none":
+            log_prob = torch.log(x + 1e-8)
+            loss = -(y_onehot * log_prob).sum(dim=1).mean()
+            return loss, y
+
+        # 1) Smoothing
+        if self.mode == "smoothing":
+            smooth = self.noise_level / (num_classes - 1)
+            y_smooth = torch.full_like(y_onehot, smooth)
+            y_smooth.scatter_(1, y.unsqueeze(1), 1.0 - self.noise_level)
+            loss = -(y_smooth * torch.log(x + 1e-8)).sum(dim=1).mean()
+            return loss, y_smooth
+
+        # 2) Mislabel
+        elif self.mode == "mislabel":
+            B = y.size(0)
+            mask = (torch.rand(B, device=y.device) < self.noise_level)
+            y_noisy = y.clone()
+            for i in range(B):
+                if mask[i]:
+                    all_cls = torch.arange(num_classes, device=y.device)
+                    wrong = all_cls[all_cls != y[i]]
+                    y_noisy[i] = wrong[torch.randint(len(wrong), (1,))]
+            loss = self.ce(x, y_noisy).mean()
+            return loss, y_noisy
+
+        # 3) Random noise
+        elif self.mode == "random_noise":
+            noise = torch.rand_like(y_onehot)
+            noise = noise / noise.sum(dim=1, keepdim=True)
+            y_noisy = (1 - self.noise_level) * y_onehot + self.noise_level * noise
+            loss = -(y_noisy * torch.log(x + 1e-8)).sum(dim=1).mean()
+            return loss, y_noisy
+
+        else:
+            raise ValueError(f"Unknown mode: {self.mode}")

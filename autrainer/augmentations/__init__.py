@@ -20,7 +20,6 @@ from .spectrogram_augmentations import (
     TimeShift,
     TimeWarp,
 )
-from .label_noise_augmentation import LabelNoise
 
 
 __all__ = [
@@ -43,6 +42,5 @@ __all__ = [
     "TimeWarp",
     "TorchaudioAugmentation",
     "TorchAudiomentationsAugmentation",
-    "TorchvisionAugmentation",
-    "LabelNoise"
+    "TorchvisionAugmentation"
 ]

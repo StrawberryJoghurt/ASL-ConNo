@@ -1,10 +1,10 @@
-id: LabelNoise
-_target_: autrainer.augmentations.AugmentationPipeline
+# id: LabelNoise
+# _target_: autrainer.augmentations.AugmentationPipeline
 
-generator_seed: 0
+# generator_seed: 0
 
-pipeline:
-  - autrainer.augmentations.LabelNoise:
-      noise_rate: 0.1
-      labels: ["New_England", "Northern", "North_Midland", "South_Midland", "Southern", "New_York_City", "Western", "Army_Brat"]
-      mode: "fixed" # or "probabilistic"
+# pipeline:
+#   - autrainer.augmentations.LabelNoise:
+#       noise_lavel: 0.1
+#       # labels: ["New_England", "Northern", "North_Midland", "South_Midland", "Southern", "New_York_City", "Western", "Army_Brat"]
+#       mode: "smoothing" # or "mislabel", "random"

@@ -2,6 +2,7 @@ defaults:
   - _self_
   - dataset: ToyTabular-C
   - model: ToyFFNN
+  - criterion: CrossEntropy # new modified
   - optimizer: Adam
   - scheduler: None
   - augmentation: None

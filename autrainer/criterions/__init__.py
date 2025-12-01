@@ -5,6 +5,7 @@ from .classification import (
     CrossEntropyLoss,
     WeightedBCEWithLogitsLoss,
     WeightedCrossEntropyLoss,
+    AutoCrossEntropyLoss,
 )
 from .regression import MSELoss, WeightedMSELoss
 
@@ -18,4 +19,5 @@ __all__ = [
     "WeightedBCEWithLogitsLoss",
     "WeightedCrossEntropyLoss",
     "WeightedMSELoss",
+    "AutoCrossEntropyLoss",
 ]
