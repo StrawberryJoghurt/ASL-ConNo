@@ -29,7 +29,6 @@ echo "GPU Status:"
 nvidia-smi
 echo "=========================================="
 
-CONF_DIR="conf/cross_domain"
 START_TIME=$(date +%s)
 EXPERIMENT_COUNT=0
 TOTAL_EXPERIMENTS=43

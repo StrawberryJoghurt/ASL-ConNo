@@ -1,13 +1,44 @@
-from functools import cached_property
 import os
+from pathlib import Path
+import random
+import shutil
 from typing import Dict, List, Optional, Union
+from zipfile import ZipFile
 
 from omegaconf import DictConfig
 import pandas as pd
+import requests
+from tqdm import tqdm
+
+
+try:
+    import gdown
+
+    GDOWN_AVAILABLE = True
+except ImportError:
+    GDOWN_AVAILABLE = False
 
 from autrainer.transforms import SmartCompose
 
 from .abstract_dataset import BaseClassificationDataset
+
+
+# Google Drive file ID for TIMIT dataset
+TIMIT_GDRIVE_ID = "1x3n4aDBPqH1ajBVQAxosFLhJu8HH7zdt"
+TIMIT_GDRIVE_URL = f"https://drive.google.com/uc?id={TIMIT_GDRIVE_ID}"
+TIMIT_ZIP_URL = f"https://drive.google.com/uc?export=download&id={TIMIT_GDRIVE_ID}"
+
+# Dialect mapping from region codes to names
+DIALECT_MAPPING = {
+    "1": "New_England",
+    "2": "Northern",
+    "3": "North_Midland",
+    "4": "South_Midland",
+    "5": "Southern",
+    "6": "New_York_City",
+    "7": "Western",
+    "8": "Army_Brat",
+}
 
 
 class TIMIT(BaseClassificationDataset):
@@ -22,13 +53,8 @@ class TIMIT(BaseClassificationDataset):
     - Gender classification (Male/Female)
     - Sentence type classification (SA/SI/SX)
 
-    The dataset expects the following structure:
-    - path/
-      - train.csv (with columns: path, target_column)
-      - dev.csv (with columns: path, target_column)
-      - test.csv (with columns: path, target_column)
-      - features_subdir/ (e.g., log_mel_16k/)
-        - [preprocessed features as .npy files]
+    The dataset will be automatically downloaded and prepared when using
+    the `autrainer fetch` command.
 
     For more information on the TIMIT corpus, see:
     https://catalog.ldc.upenn.edu/LDC93S1
@@ -103,130 +129,457 @@ class TIMIT(BaseClassificationDataset):
             stratify=stratify,
         )
 
-        # Validate the dataset structure
-        self._validate_timit_structure()
+    @staticmethod
+    def download(path: str) -> None:  # pragma: no cover
+        """Download and prepare the TIMIT dataset.
 
-    def _validate_timit_structure(self) -> None:
-        """Validate that the TIMIT dataset has the expected structure."""
-        # Check that CSV files exist and have the correct columns
-        required_columns = [self.index_column, self.target_column]
+        Downloads the TIMIT dataset from Google Drive, extracts it,
+        and prepares the dataset structure with train/dev/test splits
+        for different classification tasks.
 
-        for split_name, df in [
-            ("train", self.df_train),
-            ("dev", self.df_dev),
-            ("test", self.df_test),
-        ]:
-            for col in required_columns:
-                if col not in df.columns:
-                    raise ValueError(
-                        f"Column '{col}' not found in {split_name}.csv. "
-                        f"Available columns: {list(df.columns)}"
-                    )
+        Args:
+            path: Path to the directory to download the dataset to.
+        """
+        print(f"\n{'=' * 60}")
+        print("TIMIT Dataset Preparation")
+        print(f"{'=' * 60}\n")
 
-            # Validate that paths are relative and follow TIMIT structure
-            if not all(df[self.index_column].str.contains("/")):
-                raise ValueError(
-                    f"{split_name}.csv should contain relative paths "
-                    "with directory structure (e.g., TRAIN/DR1/FDAW0/SA1.WAV)"
+        # Determine task type from path
+        task_type = _get_task_type_from_path(path)
+        print(f"Task type: {task_type}")
+
+        # Check if dataset is already prepared
+        if _is_dataset_prepared(path):
+            print(f"Dataset already prepared at {path}")
+            return
+
+        # Get base directory (parent of task-specific directory)
+        base_path = Path(path).parent
+        timit_shared_path = base_path / "TIMIT-shared"
+        timit_raw_path = timit_shared_path / "TIMIT_raw"
+
+        # Download and extract raw TIMIT data (only once for all tasks)
+        if not timit_raw_path.exists():
+            _download_timit_archive(str(timit_shared_path))
+            _extract_timit_archive(str(timit_shared_path))
+        else:
+            print(f"TIMIT raw data already exists at {timit_raw_path}")
+
+        # Parse speaker information
+        speakers_info = _parse_speaker_info(timit_raw_path)
+
+        # Collect audio files
+        audio_files = _collect_audio_files(timit_raw_path, speakers_info)
+
+        # Create shared audio structure with symlinks (only once)
+        shared_default_path = timit_shared_path / "default"
+        if not shared_default_path.exists():
+            _create_shared_audio_structure(audio_files, shared_default_path)
+
+        # Prepare task-specific dataset
+        _prepare_task_dataset(path, audio_files, task_type, shared_default_path)
+
+        print(f"\n{'=' * 60}")
+        print(f"TIMIT {task_type} dataset preparation complete!")
+        print(f"Output directory: {path}")
+        print(f"{'=' * 60}\n")
+
+
+def _get_task_type_from_path(path: str) -> str:
+    """Determine task type from path."""
+    path_lower = path.lower()
+    if "dialect" in path_lower:
+        return "dialect"
+    if "gender" in path_lower:
+        return "gender"
+    if "sentence" in path_lower or "sentencetype" in path_lower:
+        return "sentence_type"
+    raise ValueError(
+        f"Cannot determine task type from path '{path}'. "
+        "Path should contain 'dialect', 'gender', or 'sentence_type'."
+    )
+
+
+def _is_dataset_prepared(path: str) -> bool:
+    """Check if dataset is already prepared."""
+    path_obj = Path(path)
+    return (
+        path_obj.exists()
+        and (path_obj / "train.csv").exists()
+        and (path_obj / "dev.csv").exists()
+        and (path_obj / "test.csv").exists()
+        and (path_obj / "default").exists()
+    )
+
+
+def _download_timit_archive(download_path: str) -> None:
+    """Download TIMIT archive from Google Drive."""
+    os.makedirs(download_path, exist_ok=True)
+    zip_path = Path(download_path) / "TIMIT.zip"
+
+    if zip_path.exists():
+        # Check if it's a valid zip file (not an HTML error page)
+        if zip_path.stat().st_size > 10000:  # More than 10KB
+            print(f"TIMIT.zip already downloaded at {zip_path}")
+            return
+        # Invalid file, remove and re-download
+        print(f"Removing invalid TIMIT.zip (size: {zip_path.stat().st_size} bytes)")
+        zip_path.unlink()
+
+    print("Downloading TIMIT dataset from Google Drive...")
+    print("This may take several minutes (file size: ~400MB)...")
+
+    if GDOWN_AVAILABLE:
+        try:
+            url = f"https://drive.google.com/uc?id={TIMIT_GDRIVE_ID}"
+            gdown.download(url, str(zip_path), quiet=False, fuzzy=True)
+
+            if zip_path.stat().st_size < 10000:
+                print(
+                    f"Download failed: file too small ({zip_path.stat().st_size} bytes)"
+                )
+                zip_path.unlink()
+                raise Exception("Downloaded file is too small, likely HTML error page")
+
+            print(f"Download complete: {zip_path}")
+            return
+        except (OSError, RuntimeError) as e:
+            print(f"gdown failed: {e}")
+            print("Falling back to requests method...")
+
+    print("Using requests method for download...")
+    session = requests.Session()
+
+    response = session.get(TIMIT_ZIP_URL, stream=True)
+
+    content_type = response.headers.get("content-type", "")
+    if "text/html" in content_type:
+        html_content = response.text
+        if "confirm=" in html_content:
+            import re
+
+            match = re.search(r'name="confirm"\s+value="([^"]+)"', html_content)
+            if match:
+                confirm_token = match.group(1)
+                params = {"id": TIMIT_GDRIVE_ID, "confirm": confirm_token}
+                response = session.get(
+                    "https://drive.usercontent.google.com/download",
+                    params=params,
+                    stream=True,
+                )
+                print("Got virus scan warning, retrying with confirm token...")
+
+    total_size = int(response.headers.get("content-length", 0))
+
+    with (
+        open(zip_path, "wb") as f,
+        tqdm(
+            desc="Downloading TIMIT.zip",
+            total=total_size,
+            unit="iB",
+            unit_scale=True,
+            unit_divisor=1024,
+        ) as pbar,
+    ):
+        for chunk in response.iter_content(chunk_size=8192):
+            if chunk:
+                size = f.write(chunk)
+                pbar.update(size)
+
+    print(f"Download complete: {zip_path}")
+
+
+def _extract_timit_archive(extract_path: str) -> None:
+    """Extract TIMIT archive."""
+    zip_path = Path(extract_path) / "TIMIT.zip"
+    timit_raw_path = Path(extract_path) / "TIMIT_raw"
+
+    if timit_raw_path.exists():
+        print(f"TIMIT already extracted at {timit_raw_path}")
+        return
+
+    print("Extracting TIMIT archive...")
+
+    with ZipFile(zip_path, "r") as zip_ref:
+        zip_ref.extractall(extract_path)
+
+    # The archive may extract to different paths depending on how it was created
+    # Common structures: data/lisa/data/timit/raw/TIMIT/, TIMIT/, timit/TIMIT/
+    possible_paths = [
+        Path(extract_path) / "data" / "lisa" / "data" / "timit" / "raw" / "TIMIT",
+        Path(extract_path) / "TIMIT",
+        Path(extract_path) / "timit" / "TIMIT",
+    ]
+
+    timit_source = None
+    for p in possible_paths:
+        if p.exists() and p.is_dir():
+            timit_source = p
+            break
+
+    if timit_source:
+        shutil.move(str(timit_source), str(timit_raw_path))
+        print(f"Moved TIMIT data from {timit_source} to {timit_raw_path}")
+
+        # Clean up extracted directory structure
+        if (Path(extract_path) / "data").exists():
+            shutil.rmtree(Path(extract_path) / "data")
+    else:
+        raise ValueError(
+            f"Could not find TIMIT directory after extraction in {extract_path}"
+        )
+
+    print(f"Extraction complete: {timit_raw_path}")
+
+
+def _parse_speaker_info(timit_raw_path: Path) -> Dict[str, Dict]:
+    """Parse SPKRINFO.TXT file to extract speaker metadata."""
+    spkr_info_path = timit_raw_path / "DOC" / "SPKRINFO.TXT"
+    speakers_info = {}
+
+    # If SPKRINFO.TXT doesn't exist, try alternative locations
+    if not spkr_info_path.exists():
+        alt_paths = [
+            timit_raw_path / "SPKRINFO.TXT",
+            timit_raw_path / "doc" / "SPKRINFO.TXT",
+            timit_raw_path / "doc" / "spkrinfo.txt",
+        ]
+        for alt_path in alt_paths:
+            if alt_path.exists():
+                spkr_info_path = alt_path
+                break
+
+    if not spkr_info_path.exists():
+        print("Warning: SPKRINFO.TXT not found, speaker info will be inferred")
+        return speakers_info
+
+    print(f"Reading speaker info from {spkr_info_path}")
+
+    with open(spkr_info_path, "r") as f:
+        for line in f:
+            if not line.strip() or line.startswith(";"):
+                continue
+
+            parts = line.split()
+            if len(parts) >= 4:
+                speaker_id = parts[0]
+                speakers_info[speaker_id] = {
+                    "sex": parts[1],
+                    "dialect": parts[2],
+                    "dialect_name": DIALECT_MAPPING.get(parts[2], "Unknown"),
+                    "use": parts[3],
+                }
+
+    print(f"Loaded info for {len(speakers_info)} speakers")
+    return speakers_info
+
+
+def _collect_audio_files(
+    timit_raw_path: Path, speakers_info: Dict[str, Dict]
+) -> List[Dict]:
+    """Collect all audio files from TIMIT dataset."""
+    audio_files = []
+
+    for split in ["TRAIN", "TEST"]:
+        split_dir = timit_raw_path / split
+
+        # Try lowercase if uppercase doesn't exist
+        if not split_dir.exists():
+            split_dir = timit_raw_path / split.lower()
+
+        if not split_dir.exists():
+            print(f"Warning: {split} directory not found")
+            continue
+
+        print(f"Processing {split} directory...")
+
+        for dr_dir in sorted(split_dir.iterdir()):
+            if not dr_dir.is_dir():
+                continue
+
+            # Check if this is a dialect region directory
+            if not (dr_dir.name.startswith("DR") or dr_dir.name.startswith("dr")):
+                continue
+
+            for speaker_dir in sorted(dr_dir.iterdir()):
+                if not speaker_dir.is_dir():
+                    continue
+
+                speaker_id = speaker_dir.name
+                speaker_info = speakers_info.get(speaker_id)
+
+                # If no speaker info, infer from directory structure
+                if not speaker_info:
+                    dialect_num = dr_dir.name.upper().replace("DR", "")
+                    speaker_info = {
+                        "sex": "M" if speaker_id[0].upper() == "M" else "F",
+                        "dialect": dialect_num,
+                        "dialect_name": DIALECT_MAPPING.get(dialect_num, "Unknown"),
+                        "use": "TRN" if split == "TRAIN" else "TST",
+                    }
+
+                # Find WAV files (case insensitive)
+                wav_files = list(speaker_dir.glob("*.WAV")) + list(
+                    speaker_dir.glob("*.wav")
                 )
 
-    @cached_property
-    def class_distribution(self) -> Dict[str, int]:
-        """Get the class distribution in the training set.
+                for wav_file in sorted(wav_files):
+                    sentence_id = wav_file.stem
+                    sentence_type = sentence_id[:2].upper()
 
-        Returns:
-            Dictionary mapping class names to their counts.
-        """
-        return dict(self.df_train[self.target_column].value_counts())
+                    # Create relative path
+                    rel_path = f"{split}/{dr_dir.name}/{speaker_id}/{wav_file.name}"
 
-    @cached_property
-    def dataset_info(self) -> Dict[str, any]:
-        """Get comprehensive dataset information.
+                    audio_files.append(
+                        {
+                            "path": rel_path,
+                            "absolute_path": wav_file,
+                            "speaker_id": speaker_id,
+                            "sentence_id": sentence_id,
+                            "sentence_type": sentence_type,
+                            "dialect": speaker_info["dialect"],
+                            "dialect_name": speaker_info["dialect_name"],
+                            "gender": speaker_info["sex"],
+                            "split": split,
+                        }
+                    )
 
-        Returns:
-            Dictionary containing dataset statistics and metadata.
-        """
-        return {
-            "task_type": self.task_type,
-            "target_column": self.target_column,
-            "num_classes": len(self.target_transform),
-            "class_names": self.target_transform.labels,
-            "train_samples": len(self.df_train),
-            "dev_samples": len(self.df_dev),
-            "test_samples": len(self.df_test),
-            "total_samples": len(self.df_train) + len(self.df_dev) + len(self.df_test),
-            "class_distribution": self.class_distribution,
-            "features_subdir": self.features_subdir,
-            "file_type": self.file_type,
-        }
+    print(f"Collected {len(audio_files)} audio files")
+    return audio_files
 
-    def get_speaker_id(self, file_path: str) -> str:
-        """Extract speaker ID from TIMIT file path.
 
-        TIMIT paths follow the pattern: SPLIT/DIALECT/SPEAKER_ID/UTTERANCE.WAV
+def _create_shared_audio_structure(audio_files: List[Dict], shared_path: Path) -> None:
+    """Create shared audio structure with symlinks."""
+    shared_path.mkdir(parents=True, exist_ok=True)
 
-        Args:
-            file_path: TIMIT file path (e.g., 'TRAIN/DR1/FDAW0/SA1.WAV')
+    print(f"\nCreating shared audio structure in {shared_path}")
 
-        Returns:
-            Speaker ID (e.g., 'FDAW0')
-        """
-        parts = file_path.split('/')
-        if len(parts) >= 3:
-            return parts[2]
-        raise ValueError(f"Invalid TIMIT path format: {file_path}")
+    for file_info in audio_files:
+        src_file = file_info["absolute_path"]
+        dst_file = shared_path / file_info["path"]
 
-    def get_dialect_region(self, file_path: str) -> str:
-        """Extract dialect region from TIMIT file path.
+        dst_file.parent.mkdir(parents=True, exist_ok=True)
 
-        Args:
-            file_path: TIMIT file path (e.g., 'TRAIN/DR1/FDAW0/SA1.WAV')
+        if not dst_file.exists():
+            try:
+                # Try to create symlink, fall back to copy if symlink fails
+                try:
+                    dst_file.symlink_to(src_file.resolve())
+                except (OSError, NotImplementedError):
+                    # Symlinks might not be supported, copy instead
+                    shutil.copy2(src_file, dst_file)
+            except (OSError, FileNotFoundError) as e:
+                print(f"Warning: Could not create link/copy for {dst_file}: {e}")
 
-        Returns:
-            Dialect region code (e.g., 'DR1')
-        """
-        parts = file_path.split('/')
-        if len(parts) >= 2:
-            return parts[1]
-        raise ValueError(f"Invalid TIMIT path format: {file_path}")
+    print("Shared audio structure created")
 
-    @cached_property
-    def speaker_ids(self) -> Dict[str, List[str]]:
-        """Get speaker IDs for each split.
 
-        Returns:
-            Dictionary mapping split names to lists of speaker IDs.
-        """
-        return {
-            "train": sorted(self.df_train[self.index_column].apply(
-                self.get_speaker_id
-            ).unique().tolist()),
-            "dev": sorted(self.df_dev[self.index_column].apply(
-                self.get_speaker_id
-            ).unique().tolist()),
-            "test": sorted(self.df_test[self.index_column].apply(
-                self.get_speaker_id
-            ).unique().tolist()),
-        }
+def _prepare_task_dataset(
+    task_path: str, audio_files: List[Dict], task_type: str, shared_default_path: Path
+) -> None:
+    """Prepare dataset for a specific task."""
+    print(f"\n{'=' * 60}")
+    print(f"Preparing {task_type.upper()} classification task")
+    print(f"{'=' * 60}")
 
-    @staticmethod
-    def download(path: str) -> None:
-        """TIMIT is a licensed dataset and cannot be automatically downloaded.
+    # Create task directory
+    task_path_obj = Path(task_path)
+    task_path_obj.mkdir(parents=True, exist_ok=True)
 
-        To use this dataset:
-        1. Obtain the TIMIT corpus from LDC: https://catalog.ldc.upenn.edu/LDC93S1
-        2. Prepare the dataset structure with train.csv, dev.csv, test.csv
-        3. Extract features and place them in the features_subdir
+    # Create splits
+    train_files, dev_files, test_files = _create_splits(audio_files, task_type)
 
-        Args:
-            path: Path where the dataset should be located.
+    # Write CSV files
+    _write_csv_files(train_files, dev_files, test_files, task_type, task_path_obj)
 
-        Raises:
-            NotImplementedError: Always, as TIMIT requires manual setup.
-        """
-        raise NotImplementedError(
-            "TIMIT is a licensed dataset and must be obtained from LDC. "
-            "Please visit https://catalog.ldc.upenn.edu/LDC93S1 for access. "
-            "After obtaining the dataset, prepare the CSV files and extract features "
-            "according to the TIMIT dataset class documentation."
-        )
+    # Create symlink to shared audio
+    default_link = task_path_obj / "default"
+    if not default_link.exists():
+        try:
+            # Calculate relative path from task directory to shared default
+            rel_path = os.path.relpath(shared_default_path, task_path_obj)
+            default_link.symlink_to(rel_path)
+            print(f"Created symlink: {default_link} -> {shared_default_path}")
+        except (OSError, NotImplementedError):
+            # If symlinks not supported, copy the directory
+            print(f"Symlinks not supported, copying audio files to {default_link}")
+            shutil.copytree(shared_default_path, default_link)
+
+
+def _create_splits(audio_files: List[Dict], task_type: str, seed: int = 42) -> tuple:
+    """Create train/dev/test splits with 70/15/15 ratio."""
+    random.seed(seed)
+
+    # For dialect task, exclude SA sentences
+    if task_type == "dialect":
+        filtered_files = [f for f in audio_files if f["sentence_type"] != "SA"]
+    else:
+        filtered_files = audio_files
+
+    # Get unique speakers and shuffle
+    all_speakers = list({f["speaker_id"] for f in filtered_files})
+    random.shuffle(all_speakers)
+
+    # Calculate split sizes (70/15/15)
+    total_speakers = len(all_speakers)
+    train_size = int(total_speakers * 0.70)
+    dev_size = int(total_speakers * 0.15)
+
+    train_speakers = set(all_speakers[:train_size])
+    dev_speakers = set(all_speakers[train_size : train_size + dev_size])
+    test_speakers = set(all_speakers[train_size + dev_size :])
+
+    # Split files by speaker
+    train_split = [f for f in filtered_files if f["speaker_id"] in train_speakers]
+    dev_split = [f for f in filtered_files if f["speaker_id"] in dev_speakers]
+    test_split = [f for f in filtered_files if f["speaker_id"] in test_speakers]
+
+    print(f"\nSplit statistics for {task_type} task (seed={seed}):")
+    print(
+        f"  Train: {len(train_split)} files from {len(train_speakers)} speakers "
+        f"({100 * len(train_speakers) / total_speakers:.1f}%)"
+    )
+    print(
+        f"  Dev:   {len(dev_split)} files from {len(dev_speakers)} speakers "
+        f"({100 * len(dev_speakers) / total_speakers:.1f}%)"
+    )
+    print(
+        f"  Test:  {len(test_split)} files from {len(test_speakers)} speakers "
+        f"({100 * len(test_speakers) / total_speakers:.1f}%)"
+    )
+
+    return train_split, dev_split, test_split
+
+
+def _write_csv_files(
+    train_files: List[Dict],
+    dev_files: List[Dict],
+    test_files: List[Dict],
+    task_type: str,
+    task_dir: Path,
+) -> None:
+    """Write CSV files for train/dev/test splits."""
+
+    # Determine columns based on task and create row getter function
+    def get_row(f: Dict) -> Dict:
+        if task_type == "gender":
+            return {"path": f["path"], "gender": f["gender"]}
+        if task_type == "dialect":
+            return {"path": f["path"], "dialect_name": f["dialect_name"]}
+        if task_type == "sentence_type":
+            return {"path": f["path"], "sentence_type": f["sentence_type"]}
+        raise ValueError(f"Unknown task type: {task_type}")
+
+    # Write train.csv
+    train_df = pd.DataFrame([get_row(f) for f in train_files])
+    train_df.to_csv(task_dir / "train.csv", index=False)
+
+    # Write dev.csv
+    dev_df = pd.DataFrame([get_row(f) for f in dev_files])
+    dev_df.to_csv(task_dir / "dev.csv", index=False)
+
+    # Write test.csv
+    test_df = pd.DataFrame([get_row(f) for f in test_files])
+    test_df.to_csv(task_dir / "test.csv", index=False)
+
+    print(f"CSV files written to {task_dir}")

@@ -15,11 +15,22 @@ from .spectrogram_warp_utils import _sparse_image_warp
 import numpy as np 
 
 def get_gaussian_sigma(p_signal, snr_db):
+    """Calculate Gaussian noise std for target SNR in linear domain."""
     p_noise = p_signal / (10 ** (snr_db/10))
     return np.sqrt(p_noise)
 
+
 class SNR_noise(AbstractAugmentation):
+    """Add Gaussian noise with target SNR to log mel spectrogram.
+
+    The noise is added properly in linear domain:
+    1. Convert signal from dB to linear
+    2. Generate Gaussian noise with power for target SNR
+    3. Add signal + noise in linear domain
+    4. Convert back to dB
+    """
     available_noise_type = ['Gaussian', 'StaticGaussian']
+
     def __init__(
         self,
         snr: float=0.0,
@@ -30,7 +41,7 @@ class SNR_noise(AbstractAugmentation):
     ) -> None:
         if noise_type not in self.available_noise_type:
             raise ValueError("This noise is not available.")
-        
+
         super().__init__(order, p, generator_seed)
         self.snr = snr
         self.noise_type = noise_type
@@ -44,21 +55,41 @@ class SNR_noise(AbstractAugmentation):
             self._generator.manual_seed(self.generator_seed)
 
     def apply(self, item: AbstractDataItem) -> AbstractDataItem:
-        # calculate the 
+        """Apply Gaussian noise with target SNR.
 
-        p_item = (10 ** (item.features[(item.features<0).all(dim=-1)] / 10)).sum(axis=-1).mean() # ignore padding
+        Properly adds noise in linear domain and converts back to dB.
+        """
+        # Convert signal from dB to linear domain (power spectrum)
+        signal_linear = 10 ** (item.features / 10)
+
+        # Calculate signal power
+        p_signal = signal_linear.mean()
+
+        # Calculate required noise power for target SNR
+        # SNR = 10 * log10(P_signal / P_noise)
+        # P_noise = P_signal / 10^(SNR/10)
+        p_noise_target = p_signal / (10 ** (self.snr / 10))
+
+        # Generate random noise pattern and scale to achieve target power
         if self.noise_type == "Gaussian":
-            std = get_gaussian_sigma(p_item, self.snr)
-            r = torch.randn(item.features.size(), generator=self._generator)
-            item.features = item.features + r * std 
+            noise_raw = torch.abs(torch.randn(item.features.size(), generator=self._generator))
         elif self.noise_type == "StaticGaussian":
             generator = torch.Generator()
-            std = get_gaussian_sigma(p_item, self.snr)
-            generator.manual_seed(self.generator_seed+item.index)
-            r = torch.randn(item.features.size(), generator=generator)
-            item.features = item.features + r * std
+            generator.manual_seed(self.generator_seed + item.index)
+            noise_raw = torch.abs(torch.randn(item.features.size(), generator=generator))
         else:
-            pass 
+            return item
+
+        # Scale noise to achieve exactly target mean power
+        noise_linear = noise_raw * (p_noise_target / (noise_raw.mean() + 1e-9))
+
+        # Add noise in linear domain
+        mixed_linear = signal_linear + noise_linear
+
+        # Convert back to dB
+        mixed_db = 10 * torch.log10(mixed_linear + 1e-9)
+
+        item.features = mixed_db
         return item
 
 
@@ -199,7 +230,14 @@ class CrossDomainNoise(AbstractAugmentation):
             return noise_repeated[:, :, :target_length]
 
     def apply(self, item: AbstractDataItem) -> AbstractDataItem:
-        """Apply cross-domain noise with target SNR."""
+        """Apply cross-domain noise with target SNR.
+
+        The noise is added properly in linear domain:
+        1. Convert signal and noise from dB to linear
+        2. Scale noise to achieve target SNR
+        3. Add signal + noise in linear domain
+        4. Convert back to dB
+        """
         # Select random noise file
         noise_path = random.choice(self.noise_files)
 
@@ -219,31 +257,37 @@ class CrossDomainNoise(AbstractAugmentation):
                 align_corners=False
             ).squeeze(0)
 
-        # Calculate signal power (convert from dB to linear)
-        # Mask out padding (negative values in all frequency bins)
-        valid_mask = ~(item.features < 0).all(dim=-2, keepdim=True)
-        signal_power_db = item.features * valid_mask
-        signal_power_linear = 10 ** (signal_power_db / 10)
-        p_signal = signal_power_linear.sum(dim=-2).mean()
+        # Convert signal from dB to linear domain
+        signal_linear = 10 ** (item.features / 10)
 
-        # Calculate noise power
-        noise_power_linear = 10 ** (noise_spec / 10)
-        p_noise_current = noise_power_linear.sum(dim=-2).mean()
+        # Convert noise from dB to linear domain
+        noise_linear = 10 ** (noise_spec / 10)
+
+        # Calculate signal power (mean over all dimensions)
+        p_signal = signal_linear.mean()
+
+        # Calculate current noise power
+        p_noise_current = noise_linear.mean()
 
         # Calculate required noise power for target SNR
+        # SNR = 10 * log10(P_signal / P_noise)
+        # P_noise = P_signal / 10^(SNR/10)
         p_noise_target = p_signal / (10 ** (self.snr_db / 10))
 
-        # Scale noise to achieve target SNR
-        noise_scale = torch.sqrt(p_noise_target / (p_noise_current + 1e-9))
+        # Scale factor for noise power (no sqrt because we're scaling power, not amplitude)
+        # scaled_power = original_power * scale
+        noise_scale = p_noise_target / (p_noise_current + 1e-9)
 
-        # Scale noise in linear domain, then convert back to dB
-        scaled_noise_linear = noise_power_linear * noise_scale
-        scaled_noise_db = 10 * torch.log10(scaled_noise_linear + 1e-9)
+        # Scale noise
+        scaled_noise_linear = noise_linear * noise_scale
 
-        # Add noise to signal (in dB domain, this is an approximation)
-        # For proper addition we should convert to linear, add, convert back
-        # But for augmentation, simple addition works as a reasonable approximation
-        item.features = item.features + scaled_noise_db * 0.1  # Scale factor for stability
+        # Add signal and noise in linear domain
+        mixed_linear = signal_linear + scaled_noise_linear
+
+        # Convert back to dB
+        mixed_db = 10 * torch.log10(mixed_linear + 1e-9)
+
+        item.features = mixed_db
 
         return item
 
