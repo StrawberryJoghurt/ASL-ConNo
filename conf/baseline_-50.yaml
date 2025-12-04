@@ -18,7 +18,7 @@ test_augmentation:
 hydra:
   sweeper:
     params:
-      +seed: 0
+      +seed: 2
       +batch_size: 64
       +learning_rate: 0.001
       dataset: TIMIT-sentencetype-16k

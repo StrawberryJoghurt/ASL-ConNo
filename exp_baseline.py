@@ -57,4 +57,4 @@ for seed in [0,1,2]:
         autrainer.cli.train(
             config_name=f"{exp_name}",
         )
-        break
+        # break
