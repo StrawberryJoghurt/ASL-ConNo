@@ -14,6 +14,7 @@ from .edansa2019 import EDANSA2019
 from .emo_db import EmoDB
 from .msppodcast import MSPPodcast
 from .speech_commands import SpeechCommands
+from .timit import TIMIT
 from .toy_dataset import ToyDataset
 
 
@@ -32,5 +33,6 @@ __all__ = [
     "EmoDB",
     "MSPPodcast",
     "SpeechCommands",
+    "TIMIT",
     "ToyDataset",
 ]

@@ -1,5 +1,5 @@
 id: TIMIT-dialect-16k
-_target_: autrainer.datasets.BaseClassificationDataset
+_target_: autrainer.datasets.TIMIT
 
 path: /Users/yiyi_mac/autrainer_run/demo/data/TIMIT-dialect
 features_subdir: log_mel_16k

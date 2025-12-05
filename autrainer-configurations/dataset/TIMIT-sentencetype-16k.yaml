@@ -1,7 +1,7 @@
 id: TIMIT-sentencetype-16k
 _target_: autrainer.datasets.TIMIT
 
-path: autrainer-configurations/data/TIMIT-sentence_type
+path: /Users/yiyi_mac/autrainer_run/demo/data/TIMIT-sentence_type
 features_subdir: log_mel_16k
 index_column: path
 target_column: sentence_type

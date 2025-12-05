@@ -1,7 +1,7 @@
 id: TIMIT-gender-16k
 _target_: autrainer.datasets.TIMIT
 
-path: autrainer-configurations/data/TIMIT-gender
+path: /Users/yiyi_mac/autrainer_run/demo/data/TIMIT-gender
 features_subdir: log_mel_16k
 index_column: path
 target_column: gender
