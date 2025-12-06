@@ -8,6 +8,8 @@ from omegaconf import DictConfig, OmegaConf
 import pandas as pd
 import torch
 from tqdm import tqdm
+from hydra.utils import instantiate
+
 
 import autrainer
 from autrainer.augmentations import AugmentationManager
@@ -122,11 +124,13 @@ class ModularTaskTrainer:
         # ? Misc Training Parameters
         self.disable_progress_bar = not self.cfg.get("progress_bar", False)
 
-        self.criterion = autrainer.instantiate_shorthand(
-            config=self.cfg.criterion,
-            instance_of=torch.nn.modules.loss._Loss,
-            reduction="none",
-        )
+        # self.criterion = autrainer.instantiate_shorthand(
+        #     config=self.cfg.criterion,
+        #     instance_of=torch.nn.modules.loss._Loss,
+        #     reduction="none",
+        # )
+        self.criterion = instantiate(self._cfg.criterion)
+
         if hasattr(self.criterion, "setup"):
             self.criterion.setup(self.data)
         self.criterion.to(self.DEVICE)

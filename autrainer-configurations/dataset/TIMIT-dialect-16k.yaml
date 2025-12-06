@@ -8,7 +8,11 @@ target_column: dialect_name
 file_type: npy
 file_handler: autrainer.datasets.utils.NumpyFileHandler
 
-criterion: autrainer.criterions.BalancedCrossEntropyLoss
+criterion:
+  _target_: autrainer.criterions.AutoCrossEntropyLoss
+  mode: ${criterion.mode}
+  noise_level: ${criterion.noise_level}
+
 metrics:
   - autrainer.metrics.Accuracy
   - autrainer.metrics.UAR
