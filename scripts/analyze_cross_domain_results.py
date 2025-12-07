@@ -37,8 +37,8 @@ except ImportError:
 RESULTS_DIR = Path("results")
 OUTPUT_DIR = Path("analysis_results")
 
-# NEW: Updated SNR levels (excluding -20dB)
-SNR_LEVELS = [-5, 0, 10, 20]
+# NEW: Updated SNR levels (excluding -20dB, added 30 and 40)
+SNR_LEVELS = [-5, 0, 10, 20, 30, 40]
 
 # Experiment categories
 CATEGORIES = {
