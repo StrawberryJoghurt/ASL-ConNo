@@ -396,6 +396,7 @@ class ModularTaskTrainer:
         self.bookkeeping.load_state(self.optimizer, "optimizer.pt", "_best")
         self.model.to(self.DEVICE)
         self.model.eval()
+        self.criterion.eval() # new
         self.bookkeeping.create_folder("_test")
         self.test_timer.start()
         test_results = self.evaluate(
@@ -464,6 +465,7 @@ class ModularTaskTrainer:
             epoch_folder = f"epoch_{epoch}"
             self.bookkeeping.create_folder(epoch_folder)
             self.model.train()
+            self.criterion.train() # new
             self.model.to(self.DEVICE)
             for batch_idx, data in enumerate(
                 tqdm(
@@ -560,6 +562,7 @@ class ModularTaskTrainer:
             step += 1
             pbar.update(1)
             self.model.train()
+            self.criterion.train() # new
             self.model.to(self.DEVICE)
             try:
                 data = next(self.train_loader_iter)
@@ -700,6 +703,7 @@ class ModularTaskTrainer:
             **kwargs,
         )
         self.model.eval()
+        self.criterion.eval() # new
         self.model.to(self.DEVICE)
         lk = self._loader_kwargs["dev" if dev_evaluation else "test"]
         results = self._evaluate(

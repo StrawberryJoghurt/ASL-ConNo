@@ -222,7 +222,21 @@ class AutoCrossEntropyLoss(torch.nn.Module):
         return y_onehot
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        # x should be logits
+
+        # Train/Eval switch
+        # commit it if dont want to train on clean test on noise label
+        if self.training:
+            mode = self.mode
+            noise_level = self.noise_level
+            # print(f"[trainig:] mode={mode}, noise={noise_level}")
+        else:
+            mode = "none"
+            noise_level = 0.0
+            # print(f"[eval] mode={mode}, noise={noise_level}")
+
+        # ------------------------------------
+        # x = logits → convert to log-softmax
+        # ------------------------------------
         log_probs = torch.nn.functional.log_softmax(x, dim=1)
 
         if y.ndim == 1:
@@ -231,21 +245,21 @@ class AutoCrossEntropyLoss(torch.nn.Module):
         num_classes = x.size(1)
         y_onehot = self._one_hot(y, num_classes)
 
-        # No noise
-        if self.noise_level <= 0 or self.mode == "none":
+        # 0) No noise
+        if noise_level <= 0 or mode == "none":
             return -(y_onehot * log_probs).sum(dim=1)
 
-        # Label smoothing
-        if self.mode == "smoothing":
-            smooth = self.noise_level / (num_classes - 1)
+        # 1) Smoothing
+        if mode == "smoothing":
+            smooth = noise_level / (num_classes - 1)
             y_smooth = torch.full_like(y_onehot, smooth)
-            y_smooth.scatter_(1, y.unsqueeze(1), 1.0 - self.noise_level)
+            y_smooth.scatter_(1, y.unsqueeze(1), 1.0 - noise_level)
             return -(y_smooth * log_probs).sum(dim=1)
 
-        # Mislabel
-        elif self.mode == "mislabel":
+        # 2) Mislabel
+        elif mode == "mislabel":
             B = y.size(0)
-            mask = (torch.rand(B, device=y.device) < self.noise_level)
+            mask = (torch.rand(B, device=y.device) < noise_level)
             y_noisy = y.clone()
 
             for i in range(B):
@@ -253,14 +267,15 @@ class AutoCrossEntropyLoss(torch.nn.Module):
                     all_cls = torch.arange(num_classes, device=y.device)
                     wrong = all_cls[all_cls != y[i]]
                     y_noisy[i] = wrong[torch.randint(len(wrong), (1,))]
+
             return torch.nn.functional.cross_entropy(x, y_noisy, reduction="none")
 
-        # Random noise
-        elif self.mode == "random":
+        # 3) Random soft noise
+        elif mode == "random":
             noise = torch.rand_like(y_onehot)
             noise = noise / noise.sum(dim=1, keepdim=True)
-            y_noisy = (1 - self.noise_level) * y_onehot + self.noise_level * noise
+            y_noisy = (1 - noise_level) * y_onehot + noise_level * noise
             return -(y_noisy * log_probs).sum(dim=1)
 
         else:
-            raise ValueError(f"Unknown mode: {self.mode}")
+            raise ValueError(f"Unknown mode {mode}")
