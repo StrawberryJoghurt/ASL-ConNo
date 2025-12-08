@@ -57,7 +57,10 @@ class TransformManager:
 
         train = base + self._build("train") + self.train_augmentation
         dev = base + self._build("dev") + self.dev_augmentation
-        test = base + self._build("test") + self.test_augmentation
+        if isinstance(self.test_augmentation,list):
+            test = [base + self._build("test") + aug for aug in self.test_augmentation]
+        else:
+            test = base + self._build("test") + self.test_augmentation
         return train, dev, test
 
     def _build(self, subset: str) -> SmartCompose:

@@ -1,8 +1,12 @@
-from typing import Optional
+from typing import Optional, List
+import os
+import random
 
 import torch
+import torchaudio
 import torchaudio.transforms as T
 import torchvision.transforms.functional as F
+import pandas as pd
 
 from autrainer.core.structs import AbstractDataItem
 
@@ -11,25 +15,84 @@ from .spectrogram_warp_utils import _sparse_image_warp
 import numpy as np 
 
 def get_gaussian_sigma(p_signal, snr_db):
+    """Calculate Gaussian noise std for target SNR in linear domain."""
     p_noise = p_signal / (10 ** (snr_db/10))
     return np.sqrt(p_noise)
 
+
+# class SNR_noise(AbstractAugmentation):
+#     available_noise_type = ['Gaussian', 'StaticGaussian']
+#     def __init__(
+#         self,
+#         snr: float=0.0,
+#         order: int = 0,
+#         p: float = 1.0,
+#         generator_seed: Optional[int] = None,
+#         noise_type: str='Gaussian',
+#     ) -> None:
+#         if noise_type not in self.available_noise_type:
+#             raise ValueError("This noise is not available.")
+        
+#         super().__init__(order, p, generator_seed)
+#         self.snr = snr
+#         self.noise_type = noise_type
+#         self._generator = torch.Generator()
+#         if generator_seed is not None:
+#             self._generator.manual_seed(generator_seed)
+
+#     def offset_generator_seed(self, offset: int) -> None:
+#         super().offset_generator_seed(offset)
+#         if self.generator_seed is not None:
+#             self._generator.manual_seed(self.generator_seed)
+#     def apply(self, item: AbstractDataItem) -> AbstractDataItem:
+#         mask = item.features.abs().sum(dim=-1) > 0
+
+#         # To linear
+#         signal_linear = 10 ** (item.features / 10)
+
+#         p_signal = signal_linear[mask].mean()
+#         p_noise_target = p_signal / (10 ** (self.snr / 10))
+
+#         if self.noise_type == "Gaussian":
+#             noise = torch.randn(item.features.size(), generator=self._generator)
+#         elif self.noise_type == "StaticGaussian":
+#             generator = torch.Generator()
+#             generator.manual_seed(self.generator_seed + item.index)
+#             noise = torch.randn(item.features.size(), generator=generator)
+
+#         else:
+#             raise ValueError("Unsupported noise type")
+
+#         p_noise_current = (noise[mask] ** 2).mean()
+
+#         noise_scale = p_noise_target / (p_noise_current + 1e-9)
+#         scaled_noise = noise * torch.sqrt(noise_scale)
+
+#         mixed_linear = signal_linear + scaled_noise
+
+#         mixed_db = 10 * torch.log10(mixed_linear + 1e-9)
+
+#         item.features = mixed_db
+#         return item
+
 class SNR_noise(AbstractAugmentation):
     available_noise_type = ['Gaussian', 'StaticGaussian']
+
     def __init__(
         self,
-        snr: float=0.0,
+        snr: float = 0.0,
         order: int = 0,
         p: float = 1.0,
         generator_seed: Optional[int] = None,
-        noise_type: str='Gaussian',
+        noise_type: str = 'Gaussian',
     ) -> None:
         if noise_type not in self.available_noise_type:
             raise ValueError("This noise is not available.")
-        
+
         super().__init__(order, p, generator_seed)
         self.snr = snr
         self.noise_type = noise_type
+
         self._generator = torch.Generator()
         if generator_seed is not None:
             self._generator.manual_seed(generator_seed)
@@ -38,23 +101,254 @@ class SNR_noise(AbstractAugmentation):
         super().offset_generator_seed(offset)
         if self.generator_seed is not None:
             self._generator.manual_seed(self.generator_seed)
+    def apply(self, item: AbstractDataItem) -> AbstractDataItem:
+
+        # ✅ 1. 有效区域 mask
+        mask = item.features.abs().sum(dim=-1) > 0   # [C, F]
+
+        # ✅ 2. 如果全是 padding，直接跳过
+        if mask.sum() == 0:
+            return item
+
+        # ✅ 3. dB → 线性功率
+        signal_linear = 10 ** (item.features / 10)
+
+        # ✅ 4. 生成噪声（幅值域）
+        if self.noise_type == "Gaussian":
+            noise = torch.randn(
+                signal_linear.shape,
+                device=signal_linear.device,
+                generator=self._generator
+            )
+        elif self.noise_type == "StaticGaussian":
+            generator = torch.Generator(device=signal_linear.device)
+            generator.manual_seed(self.generator_seed + item.index)
+            noise = torch.randn(
+                signal_linear.shape,
+                device=signal_linear.device,
+                generator=generator
+            )
+        else:
+            raise ValueError("Unsupported noise type")
+
+        # ✅ 5. 正确功率定义（不是平方）
+        p_signal = signal_linear[mask].mean()
+        p_noise_current = (noise[mask] ** 2).mean()
+
+        # ✅ 6. 目标噪声功率
+        p_noise_target = p_signal / (10 ** (self.snr / 10))
+
+        # ✅ 7. 幅值缩放
+        noise_scale = torch.sqrt(p_noise_target / (p_noise_current + 1e-9))
+        scaled_noise = noise * noise_scale
+
+        # ✅ 8. 防止负功率（关键修复点）
+        mixed_linear = torch.clamp(signal_linear + scaled_noise, min=1e-9)
+
+        # ✅ 9. 转回 dB
+        mixed_db = 10 * torch.log10(mixed_linear)
+
+        item.features = mixed_db
+        return item
+
+
+
+class CrossDomainNoise(AbstractAugmentation):
+    """Add real cross-domain noise from AudioSet-Balanced-Noise with target SNR.
+
+    This augmentation loads real noise samples from a directory and adds them
+    to the log mel spectrogram with a specified SNR. The noise is:
+    1. Loaded as a waveform (.wav)
+    2. Converted to log mel spectrogram matching the input's parameters
+    3. Cropped or repeated to match the input's time dimension
+    4. Scaled to achieve the target SNR
+    5. Added to the input spectrogram
+
+    Args:
+        noise_dir: Root directory containing noise wav files
+        noise_csv: Optional CSV file listing noise files. If None, all .wav files
+            in noise_dir will be used
+        snr_db: Target Signal-to-Noise Ratio in dB. Lower values = more noise
+        sample_rate: Sample rate for loading audio. Defaults to 16000
+        n_fft: FFT size for mel spectrogram. Defaults to 512
+        hop_length: Hop length for mel spectrogram. Defaults to 160
+        n_mels: Number of mel filterbanks. Defaults to 64
+        noise_type: Type of noise to use. If specified, filters noise files by
+            this label from the CSV. Options: 'Environmental noise', 'Noise',
+            'Pink noise', 'White noise'. If None, uses all available noise.
+        order: The order of the augmentation in the transformation pipeline
+        p: The probability of applying the augmentation. Defaults to 1.0
+        generator_seed: The initial seed for the internal random number generator
+    """
+
+    def __init__(
+        self,
+        noise_dir: str,
+        snr_db: float,
+        sample_rate: int = 16000,
+        n_fft: int = 512,
+        hop_length: int = 160,
+        n_mels: int = 64,
+        noise_csv: Optional[str] = None,
+        noise_type: Optional[str] = None,
+        order: int = 0,
+        p: float = 1.0,
+        generator_seed: Optional[int] = None,
+    ) -> None:
+        super().__init__(order, p, generator_seed)
+        self.noise_dir = noise_dir
+        self.snr_db = snr_db
+        self.sample_rate = sample_rate
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.n_mels = n_mels
+        self.noise_type = noise_type
+
+        # Load noise file paths
+        self.noise_files = self._load_noise_files(noise_csv)
+
+        if len(self.noise_files) == 0:
+            raise ValueError(f"No noise files found in {noise_dir}")
+
+        # Create mel spectrogram transform
+        self.mel_transform = T.MelSpectrogram(
+            sample_rate=sample_rate,
+            n_fft=n_fft,
+            hop_length=hop_length,
+            n_mels=n_mels,
+        )
+
+        # Cache for loaded noise spectrograms
+        self._noise_cache = {}
+
+    def _load_noise_files(self, noise_csv: Optional[str]) -> List[str]:
+        """Load list of noise files from directory or CSV."""
+        noise_files = []
+
+        if noise_csv is not None and os.path.exists(noise_csv):
+            # Load from CSV
+            df = pd.read_csv(noise_csv)
+            if self.noise_type is not None and 'label' in df.columns:
+                # Filter by noise type
+                df = df[df['label'] == self.noise_type]
+
+            for path in df['path']:
+                full_path = os.path.join(self.noise_dir, path)
+                if os.path.exists(full_path):
+                    noise_files.append(full_path)
+        else:
+            # Load all .wav files from directory recursively
+            for root, dirs, files in os.walk(self.noise_dir):
+                for file in files:
+                    if file.endswith('.wav'):
+                        noise_files.append(os.path.join(root, file))
+
+        return noise_files
+
+    def _load_noise_spectrogram(self, noise_path: str) -> torch.Tensor:
+        """Load a noise file and convert to log mel spectrogram."""
+        if noise_path in self._noise_cache:
+            return self._noise_cache[noise_path].clone()
+
+        # Load audio
+        waveform, sr = torchaudio.load(noise_path)
+
+        # Resample if needed
+        if sr != self.sample_rate:
+            resampler = T.Resample(sr, self.sample_rate)
+            waveform = resampler(waveform)
+
+        # Convert to mono if stereo
+        if waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
+
+        # Create mel spectrogram
+        mel_spec = self.mel_transform(waveform)
+
+        # Convert to log scale (dB)
+        log_mel_spec = 10 * torch.log10(mel_spec + 1e-9)
+
+        # Cache it
+        self._noise_cache[noise_path] = log_mel_spec
+
+        return log_mel_spec.clone()
+
+    def _match_length(self, noise: torch.Tensor, target_length: int) -> torch.Tensor:
+        """Crop or repeat noise to match target length."""
+        _, _, noise_length = noise.shape
+
+        if noise_length == target_length:
+            return noise
+        elif noise_length > target_length:
+            # Randomly crop
+            start = random.randint(0, noise_length - target_length)
+            return noise[:, :, start:start + target_length]
+        else:
+            # Repeat and crop
+            repeat_times = (target_length // noise_length) + 1
+            noise_repeated = noise.repeat(1, 1, repeat_times)
+            return noise_repeated[:, :, :target_length]
 
     def apply(self, item: AbstractDataItem) -> AbstractDataItem:
-        # calculate the 
-        mask = item.features.abs().sum(dim=-1) > 0
-        p_item = (10 ** (item.features[mask] / 10)).sum(axis=-1).mean() # ignore padding
-        if self.noise_type == "Gaussian":
-            std = get_gaussian_sigma(p_item, self.snr)
-            r = torch.randn(item.features.size(), generator=self._generator)
-            item.features = item.features + r * std 
-        elif self.noise_type == "StaticGaussian":
-            generator = torch.Generator()
-            std = get_gaussian_sigma(p_item, self.snr)
-            generator.manual_seed(self.generator_seed+item.index)
-            r = torch.randn(item.features.size(), generator=generator)
-            item.features = item.features + r * std
-        else:
-            pass 
+        """Apply cross-domain noise with target SNR.
+
+        The noise is added properly in linear domain:
+        1. Convert signal and noise from dB to linear
+        2. Scale noise to achieve target SNR
+        3. Add signal + noise in linear domain
+        4. Convert back to dB
+        """
+        # Select random noise file
+        noise_path = random.choice(self.noise_files)
+
+        # Load noise spectrogram
+        noise_spec = self._load_noise_spectrogram(noise_path)
+
+        # Match dimensions to input
+        noise_spec = self._match_length(noise_spec, item.features.shape[-1])
+
+        # Ensure noise has same shape as features
+        if noise_spec.shape[1] != item.features.shape[1]:
+            # Resize frequency dimension if needed
+            noise_spec = torch.nn.functional.interpolate(
+                noise_spec.unsqueeze(0),
+                size=(item.features.shape[1], item.features.shape[2]),
+                mode='bilinear',
+                align_corners=False
+            ).squeeze(0)
+
+        # Convert signal from dB to linear domain
+        signal_linear = 10 ** (item.features / 10)
+
+        # Convert noise from dB to linear domain
+        noise_linear = 10 ** (noise_spec / 10)
+
+        # Calculate signal power (mean over all dimensions)
+        p_signal = signal_linear.mean()
+
+        # Calculate current noise power
+        p_noise_current = noise_linear.mean()
+
+        # Calculate required noise power for target SNR
+        # SNR = 10 * log10(P_signal / P_noise)
+        # P_noise = P_signal / 10^(SNR/10)
+        p_noise_target = p_signal / (10 ** (self.snr_db / 10))
+
+        # Scale factor for noise power (no sqrt because we're scaling power, not amplitude)
+        # scaled_power = original_power * scale
+        noise_scale = p_noise_target / (p_noise_current + 1e-9)
+
+        # Scale noise
+        scaled_noise_linear = noise_linear * noise_scale
+
+        # Add signal and noise in linear domain
+        mixed_linear = signal_linear + scaled_noise_linear
+
+        # Convert back to dB
+        mixed_db = 10 * torch.log10(mixed_linear + 1e-9)
+
+        item.features = mixed_db
+
         return item
 
 

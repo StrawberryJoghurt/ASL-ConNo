@@ -333,6 +333,7 @@ class AbstractDataset(ABC):
         prefetch_factor: Optional[int] = None,
         pin_memory_device: str = "",
     ) -> DataLoader:
+
         self.test_transform.setup(self)
         return DataLoader(
             self.test_dataset,

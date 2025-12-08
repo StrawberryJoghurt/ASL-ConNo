@@ -107,14 +107,26 @@ class ModularTaskTrainer:
         train_transform, dev_transform, test_transform = transforms
 
         # ? Load Dataset
-        self.data = autrainer.instantiate(
-            config=dataset_config,
-            instance_of=AbstractDataset,
-            train_transform=train_transform,
-            dev_transform=dev_transform,
-            test_transform=test_transform,
-            seed=dataset_seed,
-        ) # 用来调用 datasets.speech_commands（或类似类）的init了
+        if isinstance(test_transform, list):
+            self.data = []
+            for transform in test_transform:
+                self.data.append(autrainer.instantiate(
+                        config=dataset_config,
+                        instance_of=AbstractDataset,
+                        train_transform=train_transform,
+                        dev_transform=dev_transform,
+                        test_transform=transform,
+                        seed=dataset_seed,
+                    ) )
+        else:
+            self.data = autrainer.instantiate(
+                config=dataset_config,
+                instance_of=AbstractDataset,
+                train_transform=train_transform,
+                dev_transform=dev_transform,
+                test_transform=test_transform,
+                seed=dataset_seed,
+            ) # 用来调用 datasets.speech_commands（或类似类）的init了
 
         # TODO: filp here
 
@@ -133,7 +145,10 @@ class ModularTaskTrainer:
             reduction="none",
         )
         if hasattr(self.criterion, "setup"):
-            self.criterion.setup(self.data)
+            if isinstance(self.data, list):
+                self.criterion.setup(self.data[0])
+            else:
+                self.criterion.setup(self.data)
         self.criterion.to(self.DEVICE)
 
         # ? Load Pretrained Model, Optimizer, and Scheduler Checkpoints
@@ -145,7 +160,8 @@ class ModularTaskTrainer:
         skip_last_layer = model_config.pop("skip_last_layer", True)
 
         # ? Load Model
-        self.output_dim = self.data.output_dim
+        
+        self.output_dim = self.data.output_dim if not isinstance(self.data, list) else self.data[0].output_dim
         self.model = autrainer.instantiate(
             config=model_config,
             instance_of=AbstractModel,
@@ -167,7 +183,7 @@ class ModularTaskTrainer:
         self._thread_manager.spawn(
             self.bookkeeping.save_model_summary,
             deepcopy(self.model),
-            self.data.train_dataset[0].features.unsqueeze(0).shape,
+            self.data.train_dataset[0].features.unsqueeze(0).shape if not isinstance(self.data, list) else self.data[0].train_dataset[0].features.unsqueeze(0).shape,
             self.DEVICE,
             "model_summary.txt",
         )
@@ -223,27 +239,53 @@ class ModularTaskTrainer:
             self.scheduler = None
 
         # ? Create Dataloaders
-        self.train_loader = self.data.create_train_loader(
-            batch_size=self.cfg.batch_size,
-            **self._loader_kwargs["train"],
-        )
-        self.dev_loader = self.data.create_dev_loader(
-            batch_size=self.cfg.inference_batch_size or self.cfg.batch_size,
-            **self._loader_kwargs["dev"],
-        )
-        self.test_loader = self.data.create_test_loader(
-            batch_size=self.cfg.inference_batch_size or self.cfg.batch_size,
-            **self._loader_kwargs["test"],
-        )
+        if isinstance(self.data, list):
+            self.train_loader = self.data[0].create_train_loader(
+                batch_size=self.cfg.batch_size,
+                **self._loader_kwargs["train"],
+            )
+            self.dev_loader = self.data[0].create_dev_loader(
+                batch_size=self.cfg.inference_batch_size or self.cfg.batch_size,
+                **self._loader_kwargs["dev"],
+            )
+            self.test_loader = []
+            for d in self.data:
+                self.test_loader.append(d.create_test_loader(
+                batch_size=self.cfg.inference_batch_size or self.cfg.batch_size,
+                **self._loader_kwargs["test"],
+            ))
+        else:
+            self.train_loader = self.data.create_train_loader(
+                batch_size=self.cfg.batch_size,
+                **self._loader_kwargs["train"],
+            )
+            self.dev_loader = self.data.create_dev_loader(
+                batch_size=self.cfg.inference_batch_size or self.cfg.batch_size,
+                **self._loader_kwargs["dev"],
+            )
+            self.test_loader = self.data.create_test_loader(
+                batch_size=self.cfg.inference_batch_size or self.cfg.batch_size,
+                **self._loader_kwargs["test"],
+            )
 
         # ? Take metrics from dataset and add train/dev loss
-        metrics = [m.name for m in self.data.metrics] + [
-            "train_loss",
-            "dev_loss",
-        ]
-        self.metrics = pd.DataFrame(columns=metrics)
-        self.max_dev_metric = self.data.tracking_metric.starting_metric
-        self.best_iteration = 1
+        if isinstance(self.data, list):
+            metrics = [m.name for m in self.data[0].metrics] + [
+                "train_loss",
+                "dev_loss",
+            ]
+            self.metrics = pd.DataFrame(columns=metrics)
+            self.max_dev_metric = self.data[0].tracking_metric.starting_metric
+            self.best_iteration = 1
+        else:
+
+            metrics = [m.name for m in self.data.metrics] + [
+                "train_loss",
+                "dev_loss",
+            ]
+            self.metrics = pd.DataFrame(columns=metrics)
+            self.max_dev_metric = self.data.tracking_metric.starting_metric
+            self.best_iteration = 1
 
         # ? Save initial (and best) Model, Optimizer and Scheduler states
         save_tasks = [
@@ -259,10 +301,10 @@ class ModularTaskTrainer:
 
         # ? Load and Save Preprocessing Pipeline if specified
         _preprocess_pipe = SmartCompose([])
-        _file_handler = self.data.file_handler
+        _file_handler = self.data.file_handler if not isinstance(self.data, list) else self.data[0].file_handler
         _features_subdir = cfg.dataset.get("features_subdir", "default")
         if (
-            not isinstance(self.data.file_handler, AudioFileHandler)
+            not isinstance(self.data.file_handler if not isinstance(self.data, list) else self.data[0].file_handler, AudioFileHandler)
             and _features_subdir != "default"
         ):
             _preprocess = OmegaConf.to_container(
@@ -276,14 +318,24 @@ class ModularTaskTrainer:
                 [autrainer.instantiate_shorthand(t) for t in _preprocess["pipeline"]]
             )
 
-        save_tasks = [
-            (self.data.target_transform, "target_transform.yaml"),
-            (self.model, "model.yaml"),
-            (self.data.test_transform, "inference_transform.yaml"),
-            (self.data.file_handler, "file_handler.yaml"),
-            (_preprocess_pipe, "preprocess_pipeline.yaml"),
-            (_file_handler, "preprocess_file_handler.yaml"),
-        ]
+        if isinstance(self.data, list):
+            save_tasks = [
+                (self.data[0].target_transform, "target_transform.yaml"),
+                (self.model, "model.yaml"),
+                (self.data[0].test_transform, "inference_transform.yaml"),
+                (self.data[0].file_handler, "file_handler.yaml"),
+                (_preprocess_pipe, "preprocess_pipeline.yaml"),
+                (_file_handler, "preprocess_file_handler.yaml"),
+            ]
+        else:
+            save_tasks = [
+                (self.data.target_transform, "target_transform.yaml"),
+                (self.model, "model.yaml"),
+                (self.data.test_transform, "inference_transform.yaml"),
+                (self.data.file_handler, "file_handler.yaml"),
+                (_preprocess_pipe, "preprocess_pipeline.yaml"),
+                (_file_handler, "preprocess_file_handler.yaml"),
+            ]
         for task in save_tasks:
             self._thread_manager.spawn(self.bookkeeping.save_audobject, *task)
 
@@ -310,8 +362,8 @@ class ModularTaskTrainer:
                     instance_of=AbstractLogger,
                     exp_name=experiment_id or self.output_directory.parent.parent.name,
                     run_name=run_name or self.output_directory.name,
-                    metrics=self.data.metrics,
-                    tracking_metric=self.data.tracking_metric,
+                    metrics=self.data.metrics if not isinstance(self.data, list) else self.data[0].metrics,
+                    tracking_metric=self.data.tracking_metric if not isinstance(self.data, list) else self.data[0].tracking_metric,
                 )
             )
 
@@ -329,7 +381,7 @@ class ModularTaskTrainer:
         self.callback_manager = CallbackManager()
         self.callback_manager.register_multiple(
             [
-                self.data,
+                self.data if not isinstance(self.data, list) else self.data[0],
                 self.model,
                 self.optimizer,
                 self.scheduler,
@@ -345,21 +397,21 @@ class ModularTaskTrainer:
             self.output_directory,
             self.cfg.training_type,
             **self.cfg.plotting,
-            metric_fns=self.data.metrics,
+            metric_fns=self.data.metrics if not isinstance(self.data, list) else self.data[0].metrics,
         )
 
         # ? Create Outputs Tracker
         self.dev_tracker, self.test_tracker = init_trackers(
             exports=[self.cfg.save_dev_outputs, self.cfg.save_test_outputs],
             prefixes=["dev", "test"],
-            data=self.data,
+            data=self.data if not isinstance(self.data, list) else self.data[0],
             bookkeeping=self.bookkeeping,
         )
         if self.cfg.save_train_outputs:
             self.train_tracker = OutputsTracker(
                 export=True,
                 prefix="train",
-                data=self.data,
+                data=self.data if not isinstance(self.data, list) else self.data[0],
                 bookkeeping=self.bookkeeping,
             )
         else:
@@ -400,15 +452,29 @@ class ModularTaskTrainer:
         self.model.eval()
         self.bookkeeping.create_folder("_test")
         self.test_timer.start()
-        test_results = self.evaluate(
-            -1,
-            "_test",
-            self.test_loader,
-            self.data.df_test,
-            dev_evaluation=False,
-            save_to="test_holistic",
-            tracker=self.test_tracker,
-        )
+        test_results = []
+        if isinstance(self.test_loader, list):
+            for i, loader in enumerate(self.test_loader):
+                test_results = self.evaluate(
+                    -1,
+                    f"_test{i}",
+                    loader,
+                    self.data[i].df_test,
+                    dev_evaluation=False,
+                    save_to="test_holistic",
+                    tracker=self.test_tracker,
+                )
+        else:
+            test_results = self.evaluate(
+                -1,
+                "_test",
+                self.test_loader,
+                self.data.df_test,
+                dev_evaluation=False,
+                save_to="test_holistic",
+                tracker=self.test_tracker,
+            )
+
         self.test_timer.stop()
         self.callback_manager.callback(
             position="cb_on_test_end",
@@ -419,8 +485,8 @@ class ModularTaskTrainer:
         self.bookkeeping.save_best_results(
             self.metrics,
             "best_results.yaml",
-            self.data.metrics,
-            self.data.tracking_metric,
+            self.data.metrics if not isinstance(self.data, list) else self.data[0].metrics,
+            self.data.tracking_metric if not isinstance(self.data, list) else self.data[0].tracking_metric,
             "_best",
         )
         self.bookkeeping.log(
@@ -449,7 +515,7 @@ class ModularTaskTrainer:
 
         self.bookkeeping.save_results_df(self.metrics, "metrics.csv")
         self.callback_manager.callback(position="cb_on_train_end", trainer=self)
-        return self.metrics.loc[self.best_iteration][self.data.tracking_metric.name]
+        return self.metrics.loc[self.best_iteration][self.data.tracking_metric.name if not isinstance(self.data, list) else self.data[0].tracking_metric.name]
 
     def train_epochs(self) -> None:
         """Train the model for a fixed number of epochs."""
@@ -485,7 +551,7 @@ class ModularTaskTrainer:
                     self.model,
                     data,
                     self.criterion,
-                    self.data.target_transform.probabilities_training,
+                    self.data.target_transform.probabilities_training if not isinstance(self.data, list) else self.data[0].target_transform.probabilities_training,
                 )
                 loss = loss.detach()
                 output = output.detach()
@@ -515,7 +581,7 @@ class ModularTaskTrainer:
                     epoch,
                     epoch_folder,
                     self.dev_loader,
-                    self.data.df_dev,
+                    self.data.df_dev if not isinstance(self.data, list) else self.data[0].df_dev,
                     tracker=self.dev_tracker,
                 )
                 self.dev_timer.stop()
@@ -731,20 +797,36 @@ class ModularTaskTrainer:
                     iteration,
                 )
             )
-        if self.data.stratify or isinstance(self.data.target_column, list):
-            logging_results = disaggregated_evaluation(
-                targets=tracker.targets,
-                predictions=tracker.predictions,
-                indices=tracker.indices,
-                groundtruth=df,
-                metrics=self.data.metrics,
-                target_column=self.data.target_column,
-                stratify=self.data.stratify,
-            )
+        if isinstance(self.data, list):
+            if self.data[0].stratify or isinstance(self.data[0].target_column, list):
+                logging_results = disaggregated_evaluation(
+                    targets=tracker.targets,
+                    predictions=tracker.predictions,
+                    indices=tracker.indices,
+                    groundtruth=df,
+                    metrics=self.data[0].metrics,
+                    target_column=self.data[0].target_column,
+                    stratify=self.data[0].stratify,
+                )
+            else:
+                logging_results = {
+                    k: {"all": v} for k, v in results.items() if not k.endswith("loss")
+                }
         else:
-            logging_results = {
-                k: {"all": v} for k, v in results.items() if not k.endswith("loss")
-            }
+            if self.data.stratify or isinstance(self.data.target_column, list):
+                logging_results = disaggregated_evaluation(
+                    targets=tracker.targets,
+                    predictions=tracker.predictions,
+                    indices=tracker.indices,
+                    groundtruth=df,
+                    metrics=self.data.metrics,
+                    target_column=self.data.target_column,
+                    stratify=self.data.stratify,
+                )
+            else:
+                logging_results = {
+                    k: {"all": v} for k, v in results.items() if not k.endswith("loss")
+                }
         if dev_evaluation:
             logging_results["dev_loss"] = {"all": results["dev_loss"]}
             logging_results["iteration"] = iteration
@@ -758,19 +840,35 @@ class ModularTaskTrainer:
         if not dev_evaluation:
             return test_results
 
-        if self.data.tracking_metric.compare(
-            results[self.data.tracking_metric.name], self.max_dev_metric
-        ):
-            self.max_dev_metric = results[self.data.tracking_metric.name]
-            self.best_iteration = iteration
-            self.bookkeeping.save_state(self.model, "model.pt", "_best")
-            self.bookkeeping.save_state(self.optimizer, "optimizer.pt", "_best")
-            if self.scheduler:
-                self.bookkeeping.save_state(self.scheduler, "scheduler.pt", "_best")
+        if isinstance(self.data, list):
+            if self.data[0].tracking_metric.compare(
+                results[self.data.tracking_metric.name if not isinstance(self.data, list) else self.data[0].tracking_metric.name], self.max_dev_metric
+            ):
+                self.max_dev_metric = results[self.data.tracking_metric.name if not isinstance(self.data, list) else self.data[0].tracking_metric.name]
+                self.best_iteration = iteration
+                self.bookkeeping.save_state(self.model, "model.pt", "_best")
+                self.bookkeeping.save_state(self.optimizer, "optimizer.pt", "_best")
+                if self.scheduler:
+                    self.bookkeeping.save_state(self.scheduler, "scheduler.pt", "_best")
 
-            # ? additionally save all best results
-            tracker.save("_best", reset=False)
-            self.bookkeeping.save_results_dict(logging_results, "dev.yaml", "_best")
+                # ? additionally save all best results
+                tracker.save("_best", reset=False)
+                self.bookkeeping.save_results_dict(logging_results, "dev.yaml", "_best")    
+        
+        else:
+            if self.data.tracking_metric.compare(
+                results[self.data.tracking_metric.name if not isinstance(self.data, list) else self.data[0].tracking_metric.name], self.max_dev_metric
+            ):
+                self.max_dev_metric = results[self.data.tracking_metric.name if not isinstance(self.data, list) else self.data[0].tracking_metric.name]
+                self.best_iteration = iteration
+                self.bookkeeping.save_state(self.model, "model.pt", "_best")
+                self.bookkeeping.save_state(self.optimizer, "optimizer.pt", "_best")
+                if self.scheduler:
+                    self.bookkeeping.save_state(self.scheduler, "scheduler.pt", "_best")
+
+                # ? additionally save all best results
+                tracker.save("_best", reset=False)
+                self.bookkeeping.save_results_dict(logging_results, "dev.yaml", "_best")
 
         if iteration % self.cfg.save_frequency == 0 or iteration == self.cfg.iterations:
             self.bookkeeping.save_state(self.model, "model.pt", iteration_folder)
@@ -821,7 +919,7 @@ class ModularTaskTrainer:
                 data.to(self.DEVICE, non_blocking=pm)
                 output = self.model(**create_model_inputs(self.model, data))
                 loss = self.criterion(
-                    self.data.target_transform.probabilities_training(output),
+                    self.data.target_transform.probabilities_training(output) if not isinstance(self.data, list) else self.data[0].target_transform.probabilities_training(output),
                     data.target,
                 )
                 reduced_loss = loss.mean().item()
@@ -838,7 +936,7 @@ class ModularTaskTrainer:
         results = {
             "loss": losses,
         }
-        for metric in self.data.metrics:
+        for metric in self.data.metrics if not isinstance(self.data, list) else self.data[0].metrics:
             results[metric.name] = metric(tracker.targets, tracker.predictions)
         return results
 

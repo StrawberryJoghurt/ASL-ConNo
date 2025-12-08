@@ -35,11 +35,17 @@ class AugmentationManager:
         Returns:
             Tuple of augmentation pipelines for train, dev, and test.
         """
-        return (
-            self._build_augmentation(self.train),
-            self._build_augmentation(self.dev),
-            self._build_augmentation(self.test),
-        )
+        if 'group' in self.test:
+            train_aug = self._build_augmentation(self.train)
+            dev_aug = self._build_augmentation(self.dev)
+            test_augs = [self._build_augmentation(aug) for aug in self.test['group']]
+            return (train_aug, dev_aug, test_augs)
+        else:
+            return (
+                self._build_augmentation(self.train),
+                self._build_augmentation(self.dev),
+                self._build_augmentation(self.test),
+            )
 
     def _build_augmentation(
         self,
