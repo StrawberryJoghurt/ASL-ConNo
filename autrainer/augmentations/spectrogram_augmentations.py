@@ -75,16 +75,101 @@ def get_gaussian_sigma(p_signal, snr_db):
 #         item.features = mixed_db
 #         return item
 
+# class SNR_noise(AbstractAugmentation):
+#     available_noise_type = ['Gaussian', 'StaticGaussian']
+
+#     def __init__(
+#         self,
+#         snr: float = 0.0,
+#         order: int = 0,
+#         p: float = 1.0,
+#         generator_seed: Optional[int] = None,
+#         noise_type: str = 'Gaussian',
+#     ) -> None:
+#         if noise_type not in self.available_noise_type:
+#             raise ValueError("This noise is not available.")
+
+#         super().__init__(order, p, generator_seed)
+#         self.snr = snr
+#         self.noise_type = noise_type
+
+#         self._generator = torch.Generator()
+#         if generator_seed is not None:
+#             self._generator.manual_seed(generator_seed)
+
+#     def offset_generator_seed(self, offset: int) -> None:
+#         super().offset_generator_seed(offset)
+#         if self.generator_seed is not None:
+#             self._generator.manual_seed(self.generator_seed)
+#     def apply(self, item: AbstractDataItem) -> AbstractDataItem:
+
+#         # ✅ 1. 有效区域 mask
+#         mask = item.features.abs().sum(dim=-1) > 0   # [C, F]
+
+#         # ✅ 2. 如果全是 padding，直接跳过
+#         if mask.sum() == 0:
+#             return item
+
+#         # ✅ 3. dB → 线性功率
+#         signal_linear = 10 ** (item.features / 10)
+
+#         # ✅ 4. 生成噪声（幅值域）
+#         if self.noise_type == "Gaussian":
+#             noise = torch.randn(
+#                 signal_linear.shape,
+#                 device=signal_linear.device,
+#                 generator=self._generator
+#             )
+#         elif self.noise_type == "StaticGaussian":
+#             generator = torch.Generator(device=signal_linear.device)
+#             generator.manual_seed(self.generator_seed + item.index)
+#             noise = torch.randn(
+#                 signal_linear.shape,
+#                 device=signal_linear.device,
+#                 generator=generator
+#             )
+#         else:
+#             raise ValueError("Unsupported noise type")
+
+#         # ✅ 5. 正确功率定义（不是平方）
+#         p_signal = signal_linear[mask].mean()
+#         p_noise_current = (noise[mask] ** 2).mean()
+
+#         # ✅ 6. 目标噪声功率
+#         p_noise_target = p_signal / (10 ** (self.snr / 10))
+
+#         # ✅ 7. 幅值缩放
+#         noise_scale = torch.sqrt(p_noise_target / (p_noise_current + 1e-9))
+#         scaled_noise = noise * noise_scale
+
+#         # ✅ 8. 防止负功率（关键修复点）
+#         mixed_linear = torch.clamp(signal_linear + scaled_noise, min=1e-9)
+
+#         # ✅ 9. 转回 dB
+#         mixed_db = 10 * torch.log10(mixed_linear)
+
+#         item.features = mixed_db
+#         return item
+
+
 class SNR_noise(AbstractAugmentation):
+    """Add Gaussian noise with target SNR to log mel spectrogram.
+
+    The noise is added properly in linear domain:
+    1. Convert signal from dB to linear
+    2. Generate Gaussian noise with power for target SNR
+    3. Add signal + noise in linear domain
+    4. Convert back to dB
+    """
     available_noise_type = ['Gaussian', 'StaticGaussian']
 
     def __init__(
         self,
-        snr: float = 0.0,
+        snr: float=0.0,
         order: int = 0,
         p: float = 1.0,
         generator_seed: Optional[int] = None,
-        noise_type: str = 'Gaussian',
+        noise_type: str='Gaussian',
     ) -> None:
         if noise_type not in self.available_noise_type:
             raise ValueError("This noise is not available.")
@@ -92,7 +177,6 @@ class SNR_noise(AbstractAugmentation):
         super().__init__(order, p, generator_seed)
         self.snr = snr
         self.noise_type = noise_type
-
         self._generator = torch.Generator()
         if generator_seed is not None:
             self._generator.manual_seed(generator_seed)
@@ -101,56 +185,44 @@ class SNR_noise(AbstractAugmentation):
         super().offset_generator_seed(offset)
         if self.generator_seed is not None:
             self._generator.manual_seed(self.generator_seed)
+
     def apply(self, item: AbstractDataItem) -> AbstractDataItem:
+        """Apply Gaussian noise with target SNR.
 
-        # ✅ 1. 有效区域 mask
-        mask = item.features.abs().sum(dim=-1) > 0   # [C, F]
-
-        # ✅ 2. 如果全是 padding，直接跳过
-        if mask.sum() == 0:
-            return item
-
-        # ✅ 3. dB → 线性功率
+        Properly adds noise in linear domain and converts back to dB.
+        """
+        # Convert signal from dB to linear domain (power spectrum)
         signal_linear = 10 ** (item.features / 10)
 
-        # ✅ 4. 生成噪声（幅值域）
-        if self.noise_type == "Gaussian":
-            noise = torch.randn(
-                signal_linear.shape,
-                device=signal_linear.device,
-                generator=self._generator
-            )
-        elif self.noise_type == "StaticGaussian":
-            generator = torch.Generator(device=signal_linear.device)
-            generator.manual_seed(self.generator_seed + item.index)
-            noise = torch.randn(
-                signal_linear.shape,
-                device=signal_linear.device,
-                generator=generator
-            )
-        else:
-            raise ValueError("Unsupported noise type")
+        # Calculate signal power
+        p_signal = signal_linear.mean()
 
-        # ✅ 5. 正确功率定义（不是平方）
-        p_signal = signal_linear[mask].mean()
-        p_noise_current = (noise[mask] ** 2).mean()
-
-        # ✅ 6. 目标噪声功率
+        # Calculate required noise power for target SNR
+        # SNR = 10 * log10(P_signal / P_noise)
+        # P_noise = P_signal / 10^(SNR/10)
         p_noise_target = p_signal / (10 ** (self.snr / 10))
 
-        # ✅ 7. 幅值缩放
-        noise_scale = torch.sqrt(p_noise_target / (p_noise_current + 1e-9))
-        scaled_noise = noise * noise_scale
+        # Generate random noise pattern and scale to achieve target power
+        if self.noise_type == "Gaussian":
+            noise_raw = torch.abs(torch.randn(item.features.size(), generator=self._generator))
+        elif self.noise_type == "StaticGaussian":
+            generator = torch.Generator()
+            generator.manual_seed(self.generator_seed + item.index)
+            noise_raw = torch.abs(torch.randn(item.features.size(), generator=generator))
+        else:
+            return item
 
-        # ✅ 8. 防止负功率（关键修复点）
-        mixed_linear = torch.clamp(signal_linear + scaled_noise, min=1e-9)
+        # Scale noise to achieve exactly target mean power
+        noise_linear = noise_raw * (p_noise_target / (noise_raw.mean() + 1e-9))
 
-        # ✅ 9. 转回 dB
-        mixed_db = 10 * torch.log10(mixed_linear)
+        # Add noise in linear domain
+        mixed_linear = signal_linear + noise_linear
+
+        # Convert back to dB
+        mixed_db = 10 * torch.log10(mixed_linear + 1e-9)
 
         item.features = mixed_db
         return item
-
 
 
 class CrossDomainNoise(AbstractAugmentation):

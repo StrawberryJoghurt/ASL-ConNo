@@ -446,6 +446,13 @@ class ModularTaskTrainer:
             raise ValueError(f"Training type {self.cfg.training_type} not supported")
 
         # ? Score best model on test set
+        if isinstance(self.test_loader, list):
+            for i, loader in enumerate(self.test_loader):
+                self.sub_evaluate(loader, self.data[0], i)
+        else:
+            return self.sub_evaluate(self.test_loader, self.data)
+    
+    def sub_evaluate(self, test_loader,data, i=None):
         self.bookkeeping.load_state(self.model, "model.pt", "_best")
         self.bookkeeping.load_state(self.optimizer, "optimizer.pt", "_best")
         self.model.to(self.DEVICE)
@@ -453,27 +460,15 @@ class ModularTaskTrainer:
         self.bookkeeping.create_folder("_test")
         self.test_timer.start()
         test_results = []
-        if isinstance(self.test_loader, list):
-            for i, loader in enumerate(self.test_loader):
-                test_results = self.evaluate(
-                    -1,
-                    f"_test{i}",
-                    loader,
-                    self.data[i].df_test,
-                    dev_evaluation=False,
-                    save_to="test_holistic",
-                    tracker=self.test_tracker,
-                )
-        else:
-            test_results = self.evaluate(
-                -1,
-                "_test",
-                self.test_loader,
-                self.data.df_test,
-                dev_evaluation=False,
-                save_to="test_holistic",
-                tracker=self.test_tracker,
-            )
+        test_results = self.evaluate(
+            -1,
+            "_test" if i is None else f'_test{i}',
+            test_loader,
+            data.df_test,
+            dev_evaluation=False,
+            save_to="test_holistic",
+            tracker=self.test_tracker,
+        )
 
         self.test_timer.stop()
         self.callback_manager.callback(
@@ -485,8 +480,8 @@ class ModularTaskTrainer:
         self.bookkeeping.save_best_results(
             self.metrics,
             "best_results.yaml",
-            self.data.metrics if not isinstance(self.data, list) else self.data[0].metrics,
-            self.data.tracking_metric if not isinstance(self.data, list) else self.data[0].tracking_metric,
+            data.metrics ,
+            data.tracking_metric,
             "_best",
         )
         self.bookkeeping.log(
@@ -516,6 +511,8 @@ class ModularTaskTrainer:
         self.bookkeeping.save_results_df(self.metrics, "metrics.csv")
         self.callback_manager.callback(position="cb_on_train_end", trainer=self)
         return self.metrics.loc[self.best_iteration][self.data.tracking_metric.name if not isinstance(self.data, list) else self.data[0].tracking_metric.name]
+    
+
 
     def train_epochs(self) -> None:
         """Train the model for a fixed number of epochs."""
@@ -786,6 +783,8 @@ class ModularTaskTrainer:
             test_results = {"test_loss": results["loss"]}
             # TODO: another ugly filter
             for key in list(set(self.metrics.columns) - {"train_loss", "dev_loss"}):
+                if key == 'iteration':
+                    continue
                 test_results[f"test_{key}"] = results[key]
 
         if dev_evaluation:
@@ -838,6 +837,7 @@ class ModularTaskTrainer:
         )
 
         if not dev_evaluation:
+            tracker.reset()
             return test_results
 
         if isinstance(self.data, list):

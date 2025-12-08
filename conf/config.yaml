@@ -7,7 +7,7 @@ device: "cuda:7"        # or 'cuda'
 results_dir: results
 # experiment_id: Gaussian_noise
 experiment_id: test
-iterations: 5
+iterations: 1
 
 # train_augmentation:
 #   _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
