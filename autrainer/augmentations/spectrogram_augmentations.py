@@ -170,14 +170,19 @@ class SNR_noise(AbstractAugmentation):
         p: float = 1.0,
         generator_seed: Optional[int] = None,
         noise_type: str='Gaussian',
+        train: bool=True,
     ) -> None:
-        if noise_type not in self.available_noise_type:
-            raise ValueError("This noise is not available.")
+        # if noise_type not in self.available_noise_type:
+        #     raise ValueError("This noise is not available.")
 
         super().__init__(order, p, generator_seed)
         self.snr = snr
         self.noise_type = noise_type
+        if 'AudioSet' in noise_type:
+            self.audioset = torch.load('AudioSet.pt')
+
         self._generator = torch.Generator()
+        self.train = train
         if generator_seed is not None:
             self._generator.manual_seed(generator_seed)
 
@@ -186,16 +191,33 @@ class SNR_noise(AbstractAugmentation):
         if self.generator_seed is not None:
             self._generator.manual_seed(self.generator_seed)
 
+    def _match_length(self, noise: torch.Tensor, target_length: int) -> torch.Tensor:
+        """Crop or repeat noise to match target length."""
+        _, noise_length, _ = noise.shape
+
+        if noise_length == target_length:
+            return noise
+        elif noise_length > target_length:
+            # Randomly crop
+            start = random.randint(0, noise_length - target_length)
+            return noise[:,start:start + target_length, :]
+        else:
+            # Repeat and crop
+            repeat_times = (target_length // noise_length) + 1
+            noise_repeated = noise.repeat(1, repeat_times, 1)
+            return noise_repeated[:, :target_length, :]
+
     def apply(self, item: AbstractDataItem) -> AbstractDataItem:
         """Apply Gaussian noise with target SNR.
 
         Properly adds noise in linear domain and converts back to dB.
         """
         # Convert signal from dB to linear domain (power spectrum)
+        mask_signal = item.features.abs().sum(dim=-1) > 0
         signal_linear = 10 ** (item.features / 10)
 
         # Calculate signal power
-        p_signal = signal_linear.mean()
+        p_signal = signal_linear[mask_signal].mean()
 
         # Calculate required noise power for target SNR
         # SNR = 10 * log10(P_signal / P_noise)
@@ -209,6 +231,21 @@ class SNR_noise(AbstractAugmentation):
             generator = torch.Generator()
             generator.manual_seed(self.generator_seed + item.index)
             noise_raw = torch.abs(torch.randn(item.features.size(), generator=generator))
+            noise_raw = self._match_length(noise_raw, len(signal_linear[mask_signal]))
+        elif 'AudioSet' in self.noise_type:
+            assert self.noise_type[-1].isdigit()
+            split = 'train' if self.train else 'test'
+            indices = self.audioset['audio_index'][split][int(self.noise_type[-1])]
+            index = random.choice(indices)
+            
+            noise_raw = torch.tensor(self.audioset['ds_logmel'][split][index]['log_mel']).T.unsqueeze(0).to(signal_linear.device)
+            
+            mask_noise = noise_raw.abs().sum(dim=-1) > 0
+            noise_raw = 10 ** (noise_raw[mask_noise] / 10)
+            noise_raw = noise_raw.unsqueeze(0)
+            noise_raw = self._match_length(noise_raw, len(signal_linear[mask_signal]))
+            if noise_raw.size(-1) != 64:
+                print(split, index)
         else:
             return item
 
@@ -216,11 +253,12 @@ class SNR_noise(AbstractAugmentation):
         noise_linear = noise_raw * (p_noise_target / (noise_raw.mean() + 1e-9))
 
         # Add noise in linear domain
-        mixed_linear = signal_linear + noise_linear
+        mixed_linear = signal_linear.clone()
+        mixed_linear[mask_signal] = mixed_linear[mask_signal] + noise_linear
 
         # Convert back to dB
         mixed_db = 10 * torch.log10(mixed_linear + 1e-9)
-
+        assert not mixed_db.isnan().any()
         item.features = mixed_db
         return item
 

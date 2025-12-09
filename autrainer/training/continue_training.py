@@ -83,7 +83,7 @@ class ContinueTraining:
             index_col="iteration",
         )
         trainer.initial_iteration = int(trainer.metrics.index.max() + 1)
-        m = trainer.data.tracking_metric
+        m = trainer.data.tracking_metric if not isinstance(trainer.data, list) else trainer.data[0].tracking_metric
         trainer.max_dev_metric = m.get_best(trainer.metrics[m.name])
         trainer.best_iteration = m.get_best_pos(trainer.metrics[m.name])
 
