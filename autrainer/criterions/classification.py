@@ -3,6 +3,8 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 import torch
+import torch.nn.functional as F
+
 
 from .utils import assert_nonzero_frequency
 
@@ -203,79 +205,128 @@ class WeightedBCEWithLogitsLoss(BalancedBCEWithLogitsLoss):
 
 class AutoCrossEntropyLoss(torch.nn.Module):
     """
-    Unified loss that applies label distortion (mislabel, smoothing, random_noise)
-    automatically inside the loss function.
+    Deterministic label-noise CrossEntropy:
+    - mislabel: fixed wrong-class per sample
+    - smoothing: deterministic
+    - random: fixed soft target per sample
     """
 
     def __init__(self, mode="mislabel", noise_level=0.1):
         super().__init__()
         self.mode = mode
         self.noise_level = noise_level
-        self.ce = torch.nn.CrossEntropyLoss(reduction="none")
-        # for test if currect config be chosen
+        self.noise_cache = {}          # sample_idx → noisy_target
         print(f"[LOSS INIT] mode={mode}, noise={noise_level}")
 
-
+    # --------------------------
+    # utils
+    # --------------------------
     def _one_hot(self, y, num_classes):
         y_onehot = torch.zeros((y.size(0), num_classes), device=y.device)
         y_onehot.scatter_(1, y.unsqueeze(1), 1.0)
         return y_onehot
 
-    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    # --------------------------
+    # deterministic noise maker
+    # --------------------------
+    def _make_noisy_target(self, clean_y, num_classes, mode, noise_level, device, sample_idx):
+        """
+        clean_y: int (scalar tensor)
+        return shape => (num_classes,) soft or hard distribution
+        """
 
-        # Train/Eval switch
-        # commit it if dont want to train on clean test on noise label
-        if self.training:
-            mode = self.mode
-            noise_level = self.noise_level
-            # print(f"[trainig:] mode={mode}, noise={noise_level}")
-        else:
-            mode = "none"
-            noise_level = 0.0
-            # print(f"[eval] mode={mode}, noise={noise_level}")
+        # -------- mislabel --------
+        if mode == "mislabel":
+            all_cls = torch.arange(num_classes, device=device)
+            wrong = all_cls[all_cls != clean_y]
 
-        # ------------------------------------
-        # x = logits → convert to log-softmax
-        # ------------------------------------
-        log_probs = torch.nn.functional.log_softmax(x, dim=1)
+            # deterministic: use sample_idx as RNG seed
+            g = torch.Generator(device=device)
+            g.manual_seed(int(sample_idx))
 
-        if y.ndim == 1:
-            y = y.long()
+            noisy_class = wrong[torch.randint(len(wrong), (1,), generator=g)]
+            noisy_onehot = torch.zeros(num_classes, device=device)
+            noisy_onehot[noisy_class] = 1.0
+            return noisy_onehot
 
-        num_classes = x.size(1)
-        y_onehot = self._one_hot(y, num_classes)
-
-        # 0) No noise
-        if noise_level <= 0 or mode == "none":
-            return -(y_onehot * log_probs).sum(dim=1)
-
-        # 1) Smoothing
-        if mode == "smoothing":
+        # -------- smoothing --------
+        elif mode == "smoothing":
             smooth = noise_level / (num_classes - 1)
-            y_smooth = torch.full_like(y_onehot, smooth)
-            y_smooth.scatter_(1, y.unsqueeze(1), 1.0 - noise_level)
-            return -(y_smooth * log_probs).sum(dim=1)
+            y_smooth = torch.full((num_classes,), smooth, device=device)
+            y_smooth[clean_y] = 1.0 - noise_level
+            return y_smooth
 
-        # 2) Mislabel
-        elif mode == "mislabel":
-            B = y.size(0)
-            mask = (torch.rand(B, device=y.device) < noise_level)
-            y_noisy = y.clone()
-
-            for i in range(B):
-                if mask[i]:
-                    all_cls = torch.arange(num_classes, device=y.device)
-                    wrong = all_cls[all_cls != y[i]]
-                    y_noisy[i] = wrong[torch.randint(len(wrong), (1,))]
-
-            return torch.nn.functional.cross_entropy(x, y_noisy, reduction="none")
-
-        # 3) Random soft noise
+        # -------- random soft noise --------
         elif mode == "random":
-            noise = torch.rand_like(y_onehot)
-            noise = noise / noise.sum(dim=1, keepdim=True)
+            # deterministic random vector
+            g = torch.Generator(device=device)
+            g.manual_seed(int(sample_idx))
+
+            noise = torch.rand(num_classes, device=device, generator=g)
+            noise = noise / noise.sum()
+
+            y_onehot = torch.zeros(num_classes, device=device)
+            y_onehot[clean_y] = 1.0
+
             y_noisy = (1 - noise_level) * y_onehot + noise_level * noise
-            return -(y_noisy * log_probs).sum(dim=1)
+            return y_noisy
 
         else:
-            raise ValueError(f"Unknown mode {mode}")
+            raise ValueError(f"Unknown noise mode {mode}")
+
+    # --------------------------
+    # main forward
+    # --------------------------
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor, idx: torch.Tensor):
+        """
+        logits: (B, C)
+        targets: (B,)
+        idx: (B,) sample indices
+        """
+        num_classes = logits.size(1)
+        device = logits.device
+
+        # -------------------------------------
+        # eval mode → always clean labels
+        # -------------------------------------
+        if not self.training or self.noise_level == 0 or self.mode == "none":
+            return F.cross_entropy(logits, targets, reduction="none")
+
+        mode = self.mode
+        nl = self.noise_level
+
+        # -------------------------------------
+        # generate deterministic noisy targets
+        # -------------------------------------
+        noisy_list = []
+        for clean_y, sid in zip(targets, idx):
+            sid = int(sid)
+
+            # cache hit
+            if sid in self.noise_cache:
+                noisy_list.append(self.noise_cache[sid])
+                continue
+
+            # create new
+            noisy_t = self._make_noisy_target(
+                clean_y=int(clean_y),
+                num_classes=num_classes,
+                mode=mode,
+                noise_level=nl,
+                device=device,
+                sample_idx=sid,
+            )
+
+            self.noise_cache[sid] = noisy_t
+            noisy_list.append(noisy_t)
+
+        noisy_targets = torch.stack(noisy_list)    # shape (B, C)
+
+        # -------------------------------------
+        # compute cross entropy manually
+        # CE(p, q) = - sum( q * log_softmax(p) )
+        # -------------------------------------
+        log_probs = F.log_softmax(logits, dim=1)
+        loss = -(noisy_targets * log_probs).sum(dim=1)
+
+        return loss

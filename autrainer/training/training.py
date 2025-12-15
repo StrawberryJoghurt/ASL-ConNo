@@ -664,7 +664,9 @@ class ModularTaskTrainer:
         """
         self.optimizer.zero_grad()
         output = model(**create_model_inputs(model, data))
-        loss = criterion(probabilities_fn(output), data.target)
+        # ★ pass sample index to loss
+        loss = criterion(probabilities_fn(output), data.target, data.index)
+        # loss = criterion(probabilities_fn(output), data.target)
         loss.mean().backward()
         self.optimizer.step()
         return loss, output
@@ -825,6 +827,7 @@ class ModularTaskTrainer:
                 loss = self.criterion(
                     self.data.target_transform.probabilities_training(output),
                     data.target,
+                    data.index # for deterministic
                 )
                 reduced_loss = loss.mean().item()
                 losses += reduced_loss
