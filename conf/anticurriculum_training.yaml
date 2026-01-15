@@ -4,7 +4,7 @@ defaults:
 
 results_dir: /data/chi-gpu1/go35mig/results_cur
 experiment_id: default
-iterations: 15
+iterations: 5
 
 hydra:
   sweeper:
