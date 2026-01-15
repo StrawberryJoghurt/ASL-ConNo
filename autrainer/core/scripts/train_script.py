@@ -4,6 +4,8 @@ from omegaconf import DictConfig, OmegaConf
 
 import autrainer
 
+import random, numpy as np, torch
+
 from .abstract_script import AbstractScript, MockParser
 from .utils import (
     add_hydra_args_to_sys,
@@ -27,6 +29,15 @@ class TrainScript(AbstractScript):
             unknown_args=True,
         )
 
+
+    # used for test global seeds
+    def _debug_print_seeds(tag=""):
+        print(f"[SEED DEBUG]{tag} torch.initial_seed() = {torch.initial_seed()}")
+        print(f"[SEED DEBUG]{tag} random.getstate()[1][0] = {random.getstate()[1][0]}")
+        print(f"[SEED DEBUG]{tag} np.random.get_state()[1][0] = {np.random.get_state()[1][0]}")
+        if torch.cuda.is_available():
+            print(f"[SEED DEBUG]{tag} torch.cuda.initial_seed() = {torch.cuda.initial_seed()}")
+
     def main(self, args: dict) -> None:
         @autrainer.main("config")
         def main(cfg: DictConfig) -> float:
@@ -37,6 +48,10 @@ class TrainScript(AbstractScript):
             OmegaConf.set_struct(cfg, False)
             OmegaConf.resolve(cfg)
             output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
+            
+            ##### test global seed
+            TrainScript._debug_print_seeds(" at start")
+            print("[SEED DEBUG] cfg.seed =", getattr(cfg, "seed", None))
 
             # ? Skip if run exists and return best tracking metric
             if os.path.exists(os.path.join(output_dir, "metrics.csv")):
@@ -62,10 +77,12 @@ class TrainScript(AbstractScript):
             cfg_path = os.path.join(output_dir, ".hydra", "config.yaml")
             os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
             OmegaConf.save(cfg, cfg_path)
-
+            
             from autrainer.training import ModularTaskTrainer
 
             trainer = ModularTaskTrainer(cfg=cfg, output_directory=output_dir)
+            ###### test global seeds
+            TrainScript._debug_print_seeds(" just after cfg = cfg, before train()")
             return trainer.train()
 
         check_invalid_config_path_arg(self.parser)
