@@ -5,6 +5,25 @@ defaults:
 results_dir: /data/chi-gpu1/go35mig/results_cur
 experiment_id: default
 iterations: 5
+train_augmentation:
+  _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
+  id: train(10)
+  pipeline:
+    - GaussianNoise:
+        _target_: autrainer.augmentations.spectrogram_augmentations.SNR_noise
+        snr: 10
+        p: 1.0
+        generator_seed: 0
+test_augmentation:
+  _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
+  id: test(10)
+  pipeline:
+    - GaussianNoise:
+        _target_: autrainer.augmentations.spectrogram_augmentations.SNR_noise
+        snr: 10
+        p: 1.0
+        generator_seed: 0
+        noise_type: StaticGaussian
 
 hydra:
   sweeper:
