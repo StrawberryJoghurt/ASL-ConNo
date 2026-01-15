@@ -1,0 +1,14 @@
+defaults:
+  - _aucurriculum_score_
+  - _self_
+
+results_dir: /data/chi-gpu1/go35mig/results_cur
+experiment_id: default
+
+hydra:
+  sweeper:
+    params:
+      curriculum/scoring: CumulativeAccuracy
+
+correlation:
+  correlation_matrix: all

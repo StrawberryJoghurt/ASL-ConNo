@@ -22,5 +22,5 @@ docs/build/
 .coverage
 .coverage.*
 *.zip
-*.yaml
+#*.yaml
 *.pt

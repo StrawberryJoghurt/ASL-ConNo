@@ -1,0 +1,6 @@
+id: CumulativeAccuracy
+type: CumulativeAccuracy
+_target_: aucurriculum.curricula.scoring.CumulativeAccuracy
+run_name: SpeechCommands-16k_Cnn10_Adam_0.001_64_epoch_15_None_None_N_N_None_None_1_0_1
+stop: best
+subset: train
