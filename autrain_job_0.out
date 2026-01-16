@@ -1,0 +1,31 @@
+critical libmamba Shell not initialized
+
+'micromamba' is running as a subprocess and can't modify the parent shell.
+Thus you must initialize your shell before using activate and deactivate.
+
+To initialize the current bash shell, run:
+    $ eval "$(micromamba shell hook --shell bash)"
+and then activate or deactivate with:
+    $ micromamba activate
+To automatically initialize all future (bash) shells, run:
+    $ micromamba shell init --shell bash --root-prefix=~/micromamba
+If your shell was already initialized, reinitialize your shell with:
+    $ micromamba shell reinit --shell bash
+Otherwise, this may be an issue. In the meantime you can run commands. See:
+    $ micromamba run --help
+
+Supported shells are {bash, zsh, csh, xonsh, cmd.exe, powershell, fish}.
+Job started on chi-gpu4
+Environment activated
+/home/go35mig/micromamba/envs/myenv/bin/python
+/home/go35mig/micromamba/envs/myenv/bin/aucurriculum
+=== Step 1: Baseline Training ===
+[2026-01-15 17:01:31,488][HYDRA] Launching 1 jobs locally
+[2026-01-15 17:01:31,488][HYDRA] 	#0 : +seed=1 +batch_size=64 +learning_rate=0.001 dataset=SpeechCommands-16k model=Cnn10 optimizer=Adam curriculum=Curriculum curriculum/sampling=Original curriculum/scoring=CumulativeAccuracy curriculum/pacing=Logarithmic curriculum.pacing.initial_size=0.2 curriculum.pacing.final_iteration=0.5 continue_training=False
+Error executing job with overrides: ['+seed=1', '+batch_size=64', '+learning_rate=0.001', 'dataset=SpeechCommands-16k', 'model=Cnn10', 'optimizer=Adam', 'curriculum=Curriculum', 'curriculum/sampling=Original', 'curriculum/scoring=CumulativeAccuracy', 'curriculum/pacing=Logarithmic', 'curriculum.pacing.initial_size=0.2', 'curriculum.pacing.final_iteration=0.5', 'continue_training=False']
+Error locating target 'aucurriculum.curricula.CurriculumPaceManager', set env var HYDRA_FULL_ERROR=1 to see chained exception.
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+=== All steps completed ===
+Job finished.
+slurmstepd: error: pam_close_session: Cannot make/remove an entry for the specified session
