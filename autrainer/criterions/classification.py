@@ -315,24 +315,31 @@ class AutoCrossEntropyLoss(torch.nn.Module):
 
         # -------- random soft noise --------
         elif mode == "random":
-            # deterministic random vector
-            g = torch.Generator(device=device)
-            g.manual_seed(int(sample_idx))
+            # deterministic per-sample RNG (建议用 CPU generator，避免 device mismatch)
+            g = torch.Generator()
+            g.manual_seed(int(sample_idx) + 1000003 * self.global_seed)
 
-            noise = torch.rand(num_classes, device=device, generator=g)
-            noise = noise / noise.sum()
+            out_device = torch.device("cpu") if self.cache_on_cpu else device
 
-            y_onehot = torch.zeros(num_classes, device=device)
-            y_onehot[int(clean_y)] = 1.0
+            # 1) 先把 true class 固定为 1-nl
+            y = torch.zeros(num_classes, device=out_device, dtype=torch.float32)
+            y[int(clean_y)] = 1.0 - nl
 
-            # use clamped nl (safety, no effect for your normal configs)
-            y_noisy = (1 - nl) * y_onehot + nl * noise
+            # 2) 在其它类上采样随机向量并归一化（只分配 nl）
+            if num_classes > 1:
+                noise = torch.rand(num_classes - 1, generator=g, dtype=torch.float32)
+                noise = noise / noise.sum()
 
-            # respect cache_on_cpu
-            if out_device.type == "cpu":
-                y_noisy = y_noisy.detach().to("cpu")
+                # 把 noise 填回所有非真类位置
+                k = 0
+                for c in range(num_classes):
+                    if c == int(clean_y):
+                        continue
+                    y[c] = nl * noise[k]
+                    k += 1
 
-            return y_noisy
+            return y
+
 
 
     # --------------------------
