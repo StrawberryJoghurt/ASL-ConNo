@@ -12,7 +12,7 @@ defaults:
   - override hydra/sweeper: autrainer_filter_sweeper
 
 training_type: epoch
-eval_frequency: 1
+eval_frequency: 9999
 save_frequency: 99999
 inference_batch_size: ${batch_size}
 device: cuda:0

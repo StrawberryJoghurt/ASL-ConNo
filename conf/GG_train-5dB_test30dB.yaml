@@ -3,7 +3,7 @@ defaults:
 - _self_
 device: cuda
 results_dir: /data/chi-gpu1/go35mig/results
-experiment_id: GG_train30_test-5
+experiment_id: GG_train-5_test30
 iterations: 15
 
 
@@ -13,18 +13,18 @@ hydra:
       +seed: 0
       +batch_size: 64
       +learning_rate: 0.001
-      dataset: SpeechCommands-16k
+      dataset: SpeechCommands-16k 
       model: Cnn10
       optimizer: Adam
 
 
 train_augmentation:
   _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
-  id: GaussianNoise(20dB)
+  id: GaussianNoise(30dB)
   pipeline:
   - SNR_noise:
       _target_: autrainer.augmentations.spectrogram_augmentations.SNR_noise
-      snr: 30
+      snr: -5
       noise_type: Gaussian
       p: 1.0
       generator_seed: 0
@@ -32,11 +32,11 @@ train_augmentation:
 
 test_augmentation:
   _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
-  id: GaussianNoise(-20dB)
+  id: GaussianNoise(0dB)
   pipeline:
   - SNR_noise:
       _target_: autrainer.augmentations.spectrogram_augmentations.SNR_noise
-      snr: -5
+      snr: 30
       noise_type: StaticGaussian
       p: 1.0
       generator_seed: 0
