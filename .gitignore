@@ -25,3 +25,7 @@ docs/build/
 #*.yaml
 *.pt
 *.sif
+autrain.out
+gpu_monitor.log
+autrain.err
+autrain.log
