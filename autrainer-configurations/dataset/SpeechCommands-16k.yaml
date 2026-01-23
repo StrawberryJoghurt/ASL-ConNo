@@ -2,6 +2,8 @@ id: SpeechCommands-16k
 _target_: autrainer.datasets.SpeechCommands
 
 path: /mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/SpeechCommands
+num_workers: 8
+pin_memory: true
 features_subdir: log_mel_16k
 index_column: path
 target_column: label
