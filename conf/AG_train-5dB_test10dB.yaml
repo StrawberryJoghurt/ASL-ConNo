@@ -1,0 +1,49 @@
+defaults:
+- _autrainer_
+- _self_
+device: cuda
+results_dir: /mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/results
+experiment_id: AG_train-5_test10
+iterations: 15
+precision: 16
+num_workers: 8
+
+hydra:
+  sweeper:
+    params:
+      +seed: 0
+      +batch_size: 256
+      +learning_rate: 0.001
+      dataset: SpeechCommands-16k
+      model: Cnn10
+      optimizer: Adam
+
+
+train_augmentation:
+  _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
+  id: AudioSetNoise(-5dB)
+  pipeline:
+  - CrossDomainNoise:
+      _target_: autrainer.augmentations.spectrogram_augmentations.CrossDomainNoise
+      noise_dir: /mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/AudioSet-Balanced-Noise
+      noise_csv: /mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/AudioSet-Balanced-Noise/train.csv
+      snr_db: -5
+      sample_rate: 16000
+      n_fft: 512
+      hop_length: 160
+      n_mels: 64
+      noise_type: null
+      p: 1.0
+      generator_seed: 0
+
+
+test_augmentation:
+  _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
+  id: GaussianNoise(10dB)
+  pipeline:
+  - SNR_noise:
+      _target_: autrainer.augmentations.spectrogram_augmentations.SNR_noise
+      snr: 10
+      noise_type: StaticGaussian
+      p: 1.0
+      generator_seed: 0

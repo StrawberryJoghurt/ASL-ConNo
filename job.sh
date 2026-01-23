@@ -29,3 +29,28 @@ apptainer exec --nv \
     /cephyr/users/zhiping/Alvis/ASL-ConNo/build/autrainer.sif \
     autrainer train -cn AG_train-5dB_test-5dB.yaml device=cuda ++dataset.path=/mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/SpeechCommands
 
+apptainer exec --nv \
+    --env LD_LIBRARY_PATH=/apps/Common/software/CUDA/11.8.0/lib64:$LD_LIBRARY_PATH \
+    /cephyr/users/zhiping/Alvis/ASL-ConNo/build/autrainer.sif \
+    autrainer train -cn AG_train-5dB_test0dB.yaml device=cuda ++dataset.path=/mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/SpeechCommands
+
+apptainer exec --nv \
+    --env LD_LIBRARY_PATH=/apps/Common/software/CUDA/11.8.0/lib64:$LD_LIBRARY_PATH \
+    /cephyr/users/zhiping/Alvis/ASL-ConNo/build/autrainer.sif \
+    autrainer train -cn AG_train-5dB_test10dB.yaml device=cuda ++dataset.path=/mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/SpeechCommands
+
+apptainer exec --nv \
+    --env LD_LIBRARY_PATH=/apps/Common/software/CUDA/11.8.0/lib64:$LD_LIBRARY_PATH \
+    /cephyr/users/zhiping/Alvis/ASL-ConNo/build/autrainer.sif \
+    autrainer train -cn AG_train-5dB_test20dB.yaml device=cuda ++dataset.path=/mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/SpeechCommands
+
+apptainer exec --nv \
+    --env LD_LIBRARY_PATH=/apps/Common/software/CUDA/11.8.0/lib64:$LD_LIBRARY_PATH \
+    /cephyr/users/zhiping/Alvis/ASL-ConNo/build/autrainer.sif \
+    autrainer train -cn AG_train-5dB_test30dB.yaml device=cuda ++dataset.path=/mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/SpeechCommands
+
+apptainer exec --nv \
+    --env LD_LIBRARY_PATH=/apps/Common/software/CUDA/11.8.0/lib64:$LD_LIBRARY_PATH \
+    /cephyr/users/zhiping/Alvis/ASL-ConNo/build/autrainer.sif \
+    autrainer train -cn AG_train-5dB_test40dB.yaml device=cuda ++dataset.path=/mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/SpeechCommands
+
