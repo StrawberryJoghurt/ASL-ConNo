@@ -1,44 +1,55 @@
 #!/usr/bin/env bash
-
-#SBATCH --time=10:00:00
-#SBATCH --partition=students
-#SBATCH --gres=gpu:1
+#SBATCH -A NAISS2025-5-98         # Account/project
+#SBATCH -p alvis                # Partition/queue
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=50000
-#SBATCH --output=./autrain_job_30.out
+#SBATCH -N 1 --gpus-per-node=A40:1
+#SBATCH -t 0-20:00:00           # Walltime
+#SBATCH --job-name=gnn
+#SBATCH --output=autrain_30.log
+#SBATCH --error=autrain_30.err
 
-# Change to your working directory
-#cd /home/go35mig/zhiping/autrainer_example
-cd /home/go35mig/zhiping/test/ASL-ConNo/
+# Load CUDA module (MUST be before running apptainer)
+module load CUDA/11.8.0
 
-# Activate your virtual environment (NOT direnv in your case)
-#source /home/go35mig/autrainenv/bin/activate
-micromamba activate myenv
+module list 2>&1 || true
+which python || true
+which apptainer || true
+nvcc --version || true
 
-# Export your library path
-#export LD_LIBRARY_PATH=/nix/store/7n3q3rgy5382di7ccrh3r6gk2xp51dh7-gcc-14.2.1.20250322-lib/lib:$LD_LIBRARY_PATH
+echo "===== GPU (HOST) ====="
+nvidia-smi || true
+nvidia-smi -L || true
 
+# Log GPU usage every 60 seconds in background
+(while true; do nvidia-smi >> gpu_monitor.log 2>&1; sleep 60; done) &
 
-echo "Job started on $(hostname)"
-echo "Environment activated"
-echo "which autrainer: $(which autrainer)"
+# Run autrainer
+apptainer exec --nv \
+    --env LD_LIBRARY_PATH=/apps/Common/software/CUDA/11.8.0/lib64:$LD_LIBRARY_PATH \
+    /cephyr/users/zhiping/Alvis/ASL-ConNo/build/autrainer.sif \
+    autrainer train -cn AG_train30dB_test-5dB.yaml device=cuda ++dataset.path=/mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/SpeechCommands
 
+apptainer exec --nv \
+    --env LD_LIBRARY_PATH=/apps/Common/software/CUDA/11.8.0/lib64:$LD_LIBRARY_PATH \
+    /cephyr/users/zhiping/Alvis/ASL-ConNo/build/autrainer.sif \
+    autrainer train -cn AG_train30dB_test0dB.yaml device=cuda ++dataset.path=/mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/SpeechCommands
 
-which python
-which autrainer
-# Run your training command
-#autrainer train -cn  GG_train30dB_test0dB.yaml device=cuda
-#
-#autrainer train -cn   GG_train30dB_test-5dB.yaml device=cuda
-#
-#autrainer train -cn   GG_train30dB_test10dB.yaml device=cuda
-#
-#autrainer train -cn   GG_train30dB_test20dB.yaml device=cuda
+apptainer exec --nv \
+    --env LD_LIBRARY_PATH=/apps/Common/software/CUDA/11.8.0/lib64:$LD_LIBRARY_PATH \
+    /cephyr/users/zhiping/Alvis/ASL-ConNo/build/autrainer.sif \
+    autrainer train -cn AG_train30dB_test10dB.yaml device=cuda ++dataset.path=/mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/SpeechCommands
 
-autrainer train -cn   GG_train30dB_test30dB.yaml device=cuda
+apptainer exec --nv \
+    --env LD_LIBRARY_PATH=/apps/Common/software/CUDA/11.8.0/lib64:$LD_LIBRARY_PATH \
+    /cephyr/users/zhiping/Alvis/ASL-ConNo/build/autrainer.sif \
+    autrainer train -cn AG_train30dB_test20dB.yaml device=cuda ++dataset.path=/mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/SpeechCommands
 
-#autrainer train -cn   AA_train30dB_test30dB.yaml device=cuda
+apptainer exec --nv \
+    --env LD_LIBRARY_PATH=/apps/Common/software/CUDA/11.8.0/lib64:$LD_LIBRARY_PATH \
+    /cephyr/users/zhiping/Alvis/ASL-ConNo/build/autrainer.sif \
+    autrainer train -cn AG_train30dB_test30dB.yaml device=cuda ++dataset.path=/mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/SpeechCommands
 
-#autrainer train -cn   AA_train30dB_test40dB.yaml device=cuda
-
-echo "Job finished."
+apptainer exec --nv \
+    --env LD_LIBRARY_PATH=/apps/Common/software/CUDA/11.8.0/lib64:$LD_LIBRARY_PATH \
+    /cephyr/users/zhiping/Alvis/ASL-ConNo/build/autrainer.sif \
+    autrainer train -cn AG_train30dB_test40dB.yaml device=cuda ++dataset.path=/mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/SpeechCommands
