@@ -2,8 +2,7 @@
 #SBATCH -A NAISS2025-5-98         # Account/project
 #SBATCH -p alvis                # Partition/queue
 #SBATCH --cpus-per-task=8
-#SBATCH -N 1 --gpus-per-node=A100:1
-#SBATCH -C MEM512
+#SBATCH -N 1 --gpus-per-node=A40:1
 #SBATCH -t 0-20:00:00           # Walltime
 #SBATCH --job-name=gnn
 #SBATCH --output=autrain.log
@@ -21,7 +20,10 @@ echo "===== GPU (HOST) ====="
 nvidia-smi || true
 nvidia-smi -L || true
 
-# Run autrainer, BATCH -C MEM512
+# Log GPU usage every 60 seconds in background
+(while true; do nvidia-smi >> gpu_monitor.log 2>&1; sleep 60; done) &
+
+# Run autrainer
 apptainer exec --nv \
     --env LD_LIBRARY_PATH=/apps/Common/software/CUDA/11.8.0/lib64:$LD_LIBRARY_PATH \
     /cephyr/users/zhiping/Alvis/ASL-ConNo/build/autrainer.sif \
