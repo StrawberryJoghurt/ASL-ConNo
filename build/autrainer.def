@@ -1,0 +1,25 @@
+Bootstrap: localimage
+  From: /apps/containers/Conda/conda-latest.sif
+
+%files
+  /cephyr/users/zhiping/Alvis/ASL-ConNo /workspace/autrainer
+
+%post
+  # Update base conda
+  /opt/conda/bin/conda update -n base -c conda-forge -y conda
+
+  # Create Python environment
+  /opt/conda/bin/conda create -y -n autrainer python=3.10
+
+  # Install PyTorch with CUDA support
+  /opt/conda/bin/conda run -n autrainer pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+  # Install autrainer and dependencies
+  /opt/conda/bin/conda run -n autrainer pip install -e /workspace/autrainer
+
+%environment
+  export PATH=/opt/conda/envs/autrainer/bin:$PATH
+  export CONDA_DEFAULT_ENV=autrainer
+
+%runscript
+  exec python "$@"

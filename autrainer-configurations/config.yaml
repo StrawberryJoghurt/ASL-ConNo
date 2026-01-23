@@ -14,6 +14,6 @@ hydra:
       +batch_size: 32
       +learning_rate: 0.001
       +preprocessing: log_mel_16k
-      dataset: TIMIT-sentencetype-16k
+      dataset: SpeechCommands-16k
       model: Cnn10
       optimizer: Adam

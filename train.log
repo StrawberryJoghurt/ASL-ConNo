@@ -1,0 +1,6 @@
+This job can be monitored from: https://job.c3se.chalmers.se/alvis/5696136
+Preprocessing datasets...
+ - SpeechCommands-16k
+[2026-01-22 22:30:27,479][HYDRA] Launching 1 jobs locally
+[2026-01-22 22:30:27,480][HYDRA] 	#0 : +seed=0 +batch_size=64 +learning_rate=0.001 dataset=SpeechCommands-16k model=Cnn10 optimizer=Adam device=cuda ++dataset.path=/mimer/NOBACKUP/groups/ulio_inverse/zhiping/data
+/mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/results/AG_train-5_test-5/training/SpeechCommands-16k_Cnn10_Adam_0.001_64_epoch_15_None_AudioSetNoise(-5dB)_GaussianNoise(-5dB)_0
