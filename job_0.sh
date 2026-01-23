@@ -5,8 +5,8 @@
 #SBATCH -N 1 --gpus-per-node=A40:1
 #SBATCH -t 0-20:00:00           # Walltime
 #SBATCH --job-name=gnn
-#SBATCH --output=autrain.log
-#SBATCH --error=autrain.err
+#SBATCH --output=autrain_0.log
+#SBATCH --error=autrain_0.err
 
 # Load CUDA module (MUST be before running apptainer)
 module load CUDA/11.8.0
