@@ -5,13 +5,14 @@ device: cuda
 results_dir: /mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/results
 experiment_id: AG_train-5_test-5
 iterations: 15
-
+precision: 16
+num_workers: 8
 
 hydra:
   sweeper:
     params:
       +seed: 0
-      +batch_size: 64
+      +batch_size: 256
       +learning_rate: 0.001
       dataset: SpeechCommands-16k 
       model: Cnn10
