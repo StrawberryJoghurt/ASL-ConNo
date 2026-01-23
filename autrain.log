@@ -1,4 +1,4 @@
-This job can be monitored from: https://job.c3se.chalmers.se/alvis/5696701
+This job can be monitored from: https://job.c3se.chalmers.se/alvis/5697985
 
 Currently Loaded Modules:
   1) CUDA/11.8.0
@@ -12,7 +12,7 @@ Built on Wed_Sep_21_10:33:58_PDT_2022
 Cuda compilation tools, release 11.8, V11.8.89
 Build cuda_11.8.r11.8/compiler.31833905_0
 ===== GPU (HOST) =====
-Fri Jan 23 02:12:56 2026       
+Fri Jan 23 11:52:36 2026       
 +-----------------------------------------------------------------------------------------+
 | NVIDIA-SMI 580.95.05              Driver Version: 580.95.05      CUDA Version: 13.0     |
 +-----------------------------------------+------------------------+----------------------+
@@ -20,9 +20,9 @@ Fri Jan 23 02:12:56 2026
 | Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
 |                                         |                        |               MIG M. |
 |=========================================+========================+======================|
-|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:4B:00.0 Off |                    0 |
-| N/A   25C    P0             40W /  400W |       0MiB /  40960MiB |      0%      Default |
-|                                         |                        |             Disabled |
+|   0  NVIDIA A40                     On  |   00000000:31:00.0 Off |                    0 |
+|  0%   27C    P8             22W /  300W |       0MiB /  46068MiB |      0%      Default |
+|                                         |                        |                  N/A |
 +-----------------------------------------+------------------------+----------------------+
 
 +-----------------------------------------------------------------------------------------+
@@ -32,112 +32,16 @@ Fri Jan 23 02:12:56 2026
 |=========================================================================================|
 |  No running processes found                                                             |
 +-----------------------------------------------------------------------------------------+
-GPU 0: NVIDIA A100-SXM4-40GB (UUID: GPU-83d80a99-b964-3979-8740-7c4dd5993363)
-[2026-01-23 02:12:58,937][HYDRA] Launching 1 jobs locally
-[2026-01-23 02:12:58,937][HYDRA] 	#0 : +seed=0 +batch_size=64 +learning_rate=0.001 dataset=SpeechCommands-16k model=Cnn10 optimizer=Adam device=cuda ++dataset.path=/mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/SpeechCommands
-/mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/results/AG_train-5_test-5/training/SpeechCommands-16k_Cnn10_Adam_0.001_64_epoch_15_None_AudioSetNoise(-5dB)_GaussianNoise(-5dB)_0
+GPU 0: NVIDIA A40 (UUID: GPU-6ef6f4b0-c884-8864-418a-a85a41f88be0)
+[2026-01-23 11:52:38,368][HYDRA] Launching 1 jobs locally
+[2026-01-23 11:52:38,369][HYDRA] 	#0 : +seed=0 +batch_size=256 +learning_rate=0.001 dataset=SpeechCommands-16k model=Cnn10 optimizer=Adam device=cuda ++dataset.path=/mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/SpeechCommands
+/mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/results/AG_train-5_test-5/training/SpeechCommands-16k_Cnn10_Adam_0.001_256_epoch_15_None_AudioSetNoise(-5dB)_GaussianNoise(-5dB)_0
 self.cfg.training_type : epoch
-[2026-01-23 02:17:14,229][INFO]
-Dev results at epoch 1:
-accuracy:   0.1009
-uar:        0.1179
-f1:         0.0721
-train_loss: 3.0255
-dev_loss:   2.6704
-
-[2026-01-23 02:19:28,475][INFO]
-Dev results at epoch 2:
-accuracy:   0.5625
-uar:        0.5689
-f1:         0.5456
-train_loss: 1.6867
-dev_loss:   1.2468
-
-[2026-01-23 02:21:39,323][INFO]
+[2026-01-23 12:03:21,195][INFO]
 Dev results at epoch 3:
-accuracy:   0.7452
-uar:        0.7370
-f1:         0.7320
-train_loss: 0.9690
-dev_loss:   0.7302
-
-[2026-01-23 02:23:51,293][INFO]
-Dev results at epoch 4:
-accuracy:   0.7897
-uar:        0.7926
-f1:         0.7770
-train_loss: 0.7408
-dev_loss:   0.6034
-
-[2026-01-23 02:26:04,306][INFO]
-Dev results at epoch 5:
-accuracy:   0.7900
-uar:        0.7948
-f1:         0.7813
-train_loss: 0.6346
-dev_loss:   0.5949
-
-[2026-01-23 02:28:16,998][INFO]
-Dev results at epoch 6:
-accuracy:   0.8432
-uar:        0.8413
-f1:         0.8365
-train_loss: 0.5584
-dev_loss:   0.4587
-
-[2026-01-23 02:30:29,062][INFO]
-Dev results at epoch 7:
-accuracy:   0.8458
-uar:        0.8473
-f1:         0.8401
-train_loss: 0.5077
-dev_loss:   0.4309
-
-[2026-01-23 02:32:44,487][INFO]
-Dev results at epoch 8:
-accuracy:   0.8446
-uar:        0.8445
-f1:         0.8354
-train_loss: 0.4724
-dev_loss:   0.4393
-
-[2026-01-23 02:34:56,685][INFO]
-Dev results at epoch 9:
-accuracy:   0.8669
-uar:        0.8615
-f1:         0.8592
-train_loss: 0.4408
-dev_loss:   0.3966
-
-[2026-01-23 02:37:09,207][INFO]
-Dev results at epoch 10:
-accuracy:   0.8635
-uar:        0.8617
-f1:         0.8540
-train_loss: 0.4149
-dev_loss:   0.3927
-
-[2026-01-23 02:39:19,355][INFO]
-Dev results at epoch 11:
-accuracy:   0.8818
-uar:        0.8825
-f1:         0.8744
-train_loss: 0.3938
-dev_loss:   0.3478
-
-[2026-01-23 02:41:31,922][INFO]
-Dev results at epoch 12:
-accuracy:   0.8837
-uar:        0.8845
-f1:         0.8765
-train_loss: 0.3701
-dev_loss:   0.3359
-
-[2026-01-23 02:43:44,381][INFO]
-Dev results at epoch 13:
-accuracy:   0.8870
-uar:        0.8852
-f1:         0.8769
-train_loss: 0.3573
-dev_loss:   0.3317
+accuracy:   0.7194
+uar:        0.7114
+f1:         0.7080
+train_loss: 2.0900
+dev_loss:   0.8438
 
