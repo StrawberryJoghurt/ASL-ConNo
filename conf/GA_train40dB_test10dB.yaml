@@ -3,7 +3,7 @@ defaults:
 - _self_
 device: cuda
 results_dir: /mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/results
-experiment_id: GA_train-5_test-5
+experiment_id: GA_train40_test10
 iterations: 15
 precision: 16
 num_workers: 8
@@ -21,11 +21,11 @@ hydra:
 
 train_augmentation:
   _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
-  id: GaussianNoise(-5dB)
+  id: GaussianNoise(40dB)
   pipeline:
   - SNR_noise:
       _target_: autrainer.augmentations.spectrogram_augmentations.SNR_noise
-      snr: -5
+      snr: 40
       noise_type: StaticGaussian
       p: 1.0
       generator_seed: 0
@@ -33,13 +33,13 @@ train_augmentation:
 
 test_augmentation:
   _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
-  id: AudioSetNoise(-5dB)
+  id: AudioSetNoise(10dB)
   pipeline:
   - CrossDomainNoise:
       _target_: autrainer.augmentations.spectrogram_augmentations.CrossDomainNoise
       noise_dir: /mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/AudioSet-Balanced-Noise
       noise_csv: /mimer/NOBACKUP/groups/ulio_inverse/zhiping/data/AudioSet-Balanced-Noise/test.csv
-      snr_db: -5
+      snr_db: 10
       sample_rate: 16000
       n_fft: 512
       hop_length: 160
