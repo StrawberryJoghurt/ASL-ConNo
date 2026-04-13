@@ -394,8 +394,10 @@ class ModularTaskTrainer:
             raise ValueError(f"Training type {self.cfg.training_type} not supported")
 
         # ? Score best model on test set
-        self.bookkeeping.load_state(self.model, "model.pt", "_best")
-        self.bookkeeping.load_state(self.optimizer, "optimizer.pt", "_best")
+        # For eval-only mode (iterations=0), model is already loaded via model_checkpoint
+        if self.cfg.iterations > 0:
+            self.bookkeeping.load_state(self.model, "model.pt", "_best")
+            self.bookkeeping.load_state(self.optimizer, "optimizer.pt", "_best")
         self.model.to(self.DEVICE)
         self.model.eval()
         self.bookkeeping.create_folder("_test")
@@ -415,22 +417,24 @@ class ModularTaskTrainer:
             trainer=self,
             test_results=test_results,
         )
-        self.metrics["iteration"] = self.metrics.index
-        self.bookkeeping.save_best_results(
-            self.metrics,
-            "best_results.yaml",
-            self.data.metrics,
-            self.data.tracking_metric,
-            "_best",
-        )
-        self.bookkeeping.log(
-            format_results(
-                self.metrics.loc[self.best_iteration].drop("iteration").to_dict(),
-                "Best",
-                self.cfg.training_type,
-                self.best_iteration,
+        # Only save best results if we have training metrics (iterations > 0)
+        if not self.metrics.empty:
+            self.metrics["iteration"] = self.metrics.index
+            self.bookkeeping.save_best_results(
+                self.metrics,
+                "best_results.yaml",
+                self.data.metrics,
+                self.data.tracking_metric,
+                "_best",
             )
-        )
+            self.bookkeeping.log(
+                format_results(
+                    self.metrics.loc[self.best_iteration].drop("iteration").to_dict(),
+                    "Best",
+                    self.cfg.training_type,
+                    self.best_iteration,
+                )
+            )
         self.bookkeeping.log(
             format_results(
                 test_results,
@@ -445,11 +449,17 @@ class ModularTaskTrainer:
         self.test_timer.save()
 
         # ? Plot Metrics
-        self.plot_metrics.plot_run(self.metrics)
+        if not self.metrics.empty:
+            self.plot_metrics.plot_run(self.metrics)
 
         self.bookkeeping.save_results_df(self.metrics, "metrics.csv")
         self.callback_manager.callback(position="cb_on_train_end", trainer=self)
-        return self.metrics.loc[self.best_iteration][self.data.tracking_metric.name]
+        
+        # Return best metric or test metric for eval-only mode
+        if not self.metrics.empty:
+            return self.metrics.loc[self.best_iteration][self.data.tracking_metric.name]
+        else:
+            return test_results.get(self.data.tracking_metric.name, 0.0)
 
     def train_epochs(self) -> None:
         """Train the model for a fixed number of epochs."""

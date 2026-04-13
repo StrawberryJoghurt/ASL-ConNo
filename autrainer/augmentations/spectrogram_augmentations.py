@@ -58,12 +58,17 @@ class SNR_noise(AbstractAugmentation):
         """Apply Gaussian noise with target SNR.
 
         Properly adds noise in linear domain and converts back to dB.
+        Masks out zero-padded frames to avoid contaminating power calculation.
         """
+        # Create mask to identify valid (non-padded) frames
+        # Padded frames have zeros which become 1 in linear domain, corrupting mean
+        mask_signal = item.features.abs().sum(dim=-1) > 0
+
         # Convert signal from dB to linear domain (power spectrum)
         signal_linear = 10 ** (item.features / 10)
 
-        # Calculate signal power
-        p_signal = signal_linear.mean()
+        # Calculate signal power only from valid frames
+        p_signal = signal_linear[mask_signal].mean()
 
         # Calculate required noise power for target SNR
         # SNR = 10 * log10(P_signal / P_noise)
@@ -83,8 +88,9 @@ class SNR_noise(AbstractAugmentation):
         # Scale noise to achieve exactly target mean power
         noise_linear = noise_raw * (p_noise_target / (noise_raw.mean() + 1e-9))
 
-        # Add noise in linear domain
-        mixed_linear = signal_linear + noise_linear
+        # Add noise only to valid frames in linear domain
+        mixed_linear = signal_linear.clone()
+        mixed_linear[mask_signal] = mixed_linear[mask_signal] + noise_linear[mask_signal]
 
         # Convert back to dB
         mixed_db = 10 * torch.log10(mixed_linear + 1e-9)
@@ -142,6 +148,7 @@ class CrossDomainNoise(AbstractAugmentation):
         self.n_fft = n_fft
         self.hop_length = hop_length
         self.n_mels = n_mels
+        self.noise_csv = noise_csv  # Required by audobject
         self.noise_type = noise_type
 
         # Load noise file paths
@@ -233,11 +240,16 @@ class CrossDomainNoise(AbstractAugmentation):
         """Apply cross-domain noise with target SNR.
 
         The noise is added properly in linear domain:
-        1. Convert signal and noise from dB to linear
-        2. Scale noise to achieve target SNR
-        3. Add signal + noise in linear domain
-        4. Convert back to dB
+        1. Create mask to identify valid (non-padded) frames
+        2. Convert signal and noise from dB to linear
+        3. Scale noise to achieve target SNR (using only valid frames)
+        4. Add signal + noise in linear domain (only to valid frames)
+        5. Convert back to dB
         """
+        # Create mask to identify valid (non-padded) frames
+        # Padded frames have zeros which become 1 in linear domain, corrupting mean
+        mask_signal = item.features.abs().sum(dim=-1) > 0
+
         # Select random noise file
         noise_path = random.choice(self.noise_files)
 
@@ -263,11 +275,11 @@ class CrossDomainNoise(AbstractAugmentation):
         # Convert noise from dB to linear domain
         noise_linear = 10 ** (noise_spec / 10)
 
-        # Calculate signal power (mean over all dimensions)
-        p_signal = signal_linear.mean()
+        # Calculate signal power only from valid frames
+        p_signal = signal_linear[mask_signal].mean()
 
-        # Calculate current noise power
-        p_noise_current = noise_linear.mean()
+        # Calculate current noise power (from portion corresponding to valid signal frames)
+        p_noise_current = noise_linear[mask_signal].mean()
 
         # Calculate required noise power for target SNR
         # SNR = 10 * log10(P_signal / P_noise)
@@ -281,8 +293,9 @@ class CrossDomainNoise(AbstractAugmentation):
         # Scale noise
         scaled_noise_linear = noise_linear * noise_scale
 
-        # Add signal and noise in linear domain
-        mixed_linear = signal_linear + scaled_noise_linear
+        # Add noise only to valid frames in linear domain
+        mixed_linear = signal_linear.clone()
+        mixed_linear[mask_signal] = mixed_linear[mask_signal] + scaled_noise_linear[mask_signal]
 
         # Convert back to dB
         mixed_db = 10 * torch.log10(mixed_linear + 1e-9)

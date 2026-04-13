@@ -1,0 +1,44 @@
+defaults:
+- _autrainer_
+- _self_
+device: cuda
+results_dir: results_rhythmic/run_02
+experiment_id: RG_train10_test40
+iterations: 0
+hydra:
+  sweeper:
+    params:
+      +seed: 0
+      +batch_size: 64
+      +learning_rate: 0.001
+      dataset: TIMIT-sentencetype-16k
+      model: Cnn10-32k-T
+      +model.model_checkpoint: trained_models/run_02/RR_10dB.pt
+      +model.skip_last_layer: false
+      optimizer: Adam
+train_augmentation:
+  _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
+  id: RhythmicNoise(10dB)
+  pipeline:
+  - CrossDomainNoise:
+      _target_: autrainer.augmentations.spectrogram_augmentations.CrossDomainNoise
+      noise_dir: autrainer-configurations/data/AudioSet-Balanced-Rhythmic
+      noise_csv: autrainer-configurations/data/AudioSet-Balanced-Rhythmic/train.csv
+      snr_db: 10.0
+      sample_rate: 16000
+      n_fft: 512
+      hop_length: 160
+      n_mels: 64
+      noise_type: null
+      p: 1.0
+      generator_seed: 0
+test_augmentation:
+  _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
+  id: GaussianNoise(40dB)
+  pipeline:
+  - SNR_noise:
+      _target_: autrainer.augmentations.spectrogram_augmentations.SNR_noise
+      snr: 40.0
+      noise_type: StaticGaussian
+      p: 1.0
+      generator_seed: 0

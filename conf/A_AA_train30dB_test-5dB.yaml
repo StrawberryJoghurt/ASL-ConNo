@@ -1,0 +1,50 @@
+defaults:
+- _autrainer_
+- _self_
+device: cuda
+results_dir: results/run_02
+experiment_id: AA_train30_test-5
+iterations: 0
+hydra:
+  sweeper:
+    params:
+      +seed: 0
+      +batch_size: 64
+      +learning_rate: 0.001
+      dataset: TIMIT-sentencetype-16k
+      model: Cnn10-32k-T
+      +model.model_checkpoint: trained_models/audioset_run_02/AA_30dB.pt
+      +model.skip_last_layer: false
+      optimizer: Adam
+train_augmentation:
+  _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
+  id: AudioSetNoise(30dB)
+  pipeline:
+  - CrossDomainNoise:
+      _target_: autrainer.augmentations.spectrogram_augmentations.CrossDomainNoise
+      noise_dir: autrainer-configurations/data/AudioSet-Balanced-Noise
+      noise_csv: autrainer-configurations/data/AudioSet-Balanced-Noise/train.csv
+      snr_db: 30.0
+      sample_rate: 16000
+      n_fft: 512
+      hop_length: 160
+      n_mels: 64
+      noise_type: null
+      p: 1.0
+      generator_seed: 0
+test_augmentation:
+  _target_: autrainer.augmentations.augmentation_pipeline.AugmentationPipeline
+  id: AudioSetNoise(-5dB)
+  pipeline:
+  - CrossDomainNoise:
+      _target_: autrainer.augmentations.spectrogram_augmentations.CrossDomainNoise
+      noise_dir: autrainer-configurations/data/AudioSet-Balanced-Noise
+      noise_csv: autrainer-configurations/data/AudioSet-Balanced-Noise/test.csv
+      snr_db: -5.0
+      sample_rate: 16000
+      n_fft: 512
+      hop_length: 160
+      n_mels: 64
+      noise_type: null
+      p: 1.0
+      generator_seed: 0

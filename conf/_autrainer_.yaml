@@ -13,7 +13,7 @@ defaults:
 
 training_type: epoch
 eval_frequency: 1
-save_frequency: ${eval_frequency}
+save_frequency: 9999  # Only save _best, not intermediate epochs
 inference_batch_size: ${batch_size}
 device: cuda:0
 
