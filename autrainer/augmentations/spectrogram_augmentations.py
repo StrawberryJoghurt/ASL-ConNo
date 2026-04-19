@@ -7,7 +7,7 @@ import torchaudio
 import torchaudio.transforms as T
 import torchvision.transforms.functional as F
 import pandas as pd
-
+import colorednoise as cn
 from autrainer.core.structs import AbstractDataItem
 
 from .abstract_augmentation import AbstractAugmentation
@@ -179,7 +179,7 @@ class SNR_noise(AbstractAugmentation):
         self.snr = snr
         self.noise_type = noise_type
         if 'AudioSet' in noise_type:
-            self.audioset = torch.load('AudioSet.pt')
+            self.audioset = torch.load('./data/AudioSet/AudioSet.pt')   
 
         self._generator = torch.Generator()
         self.train = train
@@ -214,6 +214,7 @@ class SNR_noise(AbstractAugmentation):
         """
         # Convert signal from dB to linear domain (power spectrum)
         mask_signal = item.features.abs().sum(dim=-1) > 0
+        mask_noise_mel = None
         signal_linear = 10 ** (item.features / 10)
 
         # Calculate signal power
@@ -232,14 +233,37 @@ class SNR_noise(AbstractAugmentation):
             generator.manual_seed(self.generator_seed + item.index)
             noise_raw = torch.abs(torch.randn(item.features.size(), generator=generator))
             noise_raw = self._match_length(noise_raw, len(signal_linear[mask_signal]))
+        elif self.noise_type == 'Pink':
+            # print("Pink Noise")
+            size = tuple(item.features.size())
+            noise_np = cn.powerlaw_psd_gaussian(
+                1,
+                size=size,
+            )
+            
+            noise_raw = torch.from_numpy(np.abs(noise_np)).float().to(signal_linear.device)
+            noise_raw = self._match_length(
+                noise_raw,
+                len(signal_linear[mask_signal])
+            )
+            assert (noise_raw > 0).all()
+
         elif 'AudioSet' in self.noise_type:
-            assert self.noise_type[-1].isdigit()
+            assert self.noise_type.split('_')[0][-1].isdigit()
+            
             split = 'train' if self.train else 'test'
             indices = self.audioset['audio_index'][split][int(self.noise_type[-1])]
             index = random.choice(indices)
             
             noise_raw = torch.tensor(self.audioset['ds_logmel'][split][index]['log_mel']).T.unsqueeze(0).to(signal_linear.device)
-            
+            if len(self.noise_type.split('_'))==2:
+                part_id = int(self.noise_type[-1])
+                wind_sub_mel = torch.zeros_like(noise_raw)
+                wind_sub_mel[:,:,16*part_id:16*(part_id+1)] = noise_raw[:,:,16*part_id:16*(part_id+1)]
+                wind_sub_mel = wind_sub_mel.to(noise_raw.device)
+                noise_raw = wind_sub_mel
+                mask_noise_mel = torch.zeros(wind_sub_mel.size(-1),dtype=bool)
+                mask_noise_mel[16*part_id:16*(part_id+1)] = True
             mask_noise = noise_raw.abs().sum(dim=-1) > 0
             noise_raw = 10 ** (noise_raw[mask_noise] / 10)
             noise_raw = noise_raw.unsqueeze(0)
@@ -250,7 +274,10 @@ class SNR_noise(AbstractAugmentation):
             return item
 
         # Scale noise to achieve exactly target mean power
-        noise_linear = noise_raw * (p_noise_target / (noise_raw.mean() + 1e-9))
+        if mask_noise_mel is None:
+            noise_linear = noise_raw * (p_noise_target / (noise_raw.mean() + 1e-9))
+        else:
+            noise_linear = noise_raw * (p_noise_target / (noise_raw[:,:,mask_noise_mel].mean() + 1e-9))
 
         # Add noise in linear domain
         mixed_linear = signal_linear.clone()
