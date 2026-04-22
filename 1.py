@@ -18,6 +18,11 @@ mel_transform = torchaudio.transforms.MelSpectrogram(
 
 amp_to_db = torchaudio.transforms.AmplitudeToDB()
 
+
+def normalize_label(label: str) -> str:
+    """Normalize label text for robust matching."""
+    return " ".join(str(label).strip().lower().replace("_", " ").replace("-", " ").split())
+
 # 统一 mel 时间长度
 MAX_FRAMES = 1024   # 可调整
 
@@ -125,8 +130,10 @@ mapping = {
     6:'Wild animals+Domestic animals, pets',
     7:'Bell+Alarm',
     8:'Wind+Water',
-    # 9:'Pink'
+    9:'PinkNoise'
 }
+
+PINK_SOURCE_LABELS = {"pink noise", "pinknoise"}
 
 from tqdm import tqdm 
 audio_index = {}
@@ -138,6 +145,11 @@ for split in ['train', 'test']:
 for split in ['train', 'test']:
     print(split)
     for i, sample in enumerate(tqdm(ds_logmel[split])):
+        normalized_labels = {normalize_label(lb) for lb in sample['human_labels']}
+
+        if any(lb in normalized_labels for lb in PINK_SOURCE_LABELS):
+            audio_index[split][9].append(i)
+
         if mapping[0] in sample['human_labels'] or mapping[1] in sample['human_labels']:
             audio_index[split][6].append(i)
             if mapping[0] not in sample['human_labels']:
@@ -158,6 +170,17 @@ for split in ['train', 'test']:
                 audio_index[split][5].append(i)
             if mapping[5] not in sample['human_labels']:
                 audio_index[split][4].append(i)
+
+# pink noise key self-check before save
+pink_train_count = len(audio_index['train'][9])
+pink_test_count = len(audio_index['test'][9])
+print(f"pink_noise_count train={pink_train_count}, test={pink_test_count}")
+if pink_train_count == 0:
+    raise ValueError(
+        "audio_index['train'][9] is empty. Pink noise was not indexed; check label matching."
+    )
+if pink_test_count == 0:
+    print("WARNING: audio_index['test'][9] is empty.")
 
 
 # Structure of AudioSet

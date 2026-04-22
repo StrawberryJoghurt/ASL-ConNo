@@ -6,6 +6,7 @@ results/
 # VS Code
 .vscode/
 
+./plot_data_yaml_bundle
 # venv
 .venv
 
