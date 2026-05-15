@@ -664,6 +664,15 @@ class ModularTaskTrainer:
         """
         self.optimizer.zero_grad()
         output = model(**create_model_inputs(model, data))
+        
+        # tests
+        # if not hasattr(self, "_printed_prob_fn"):
+        #     self._printed_prob_fn = True
+        #     print("[DEBUG] probabilities_fn =", probabilities_fn)
+        #     x = probabilities_fn(output).detach()
+        #     print("[DEBUG] prob_fn(out) min/max:", x.min().item(), x.max().item())
+        #     print("[DEBUG] prob_fn(out) mean row-sum:", x.sum(dim=1).mean().item())
+        
         # ★ pass sample index to loss
         loss = criterion(probabilities_fn(output), data.target, data.index)
         # loss = criterion(probabilities_fn(output), data.target)
